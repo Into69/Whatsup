@@ -1,7 +1,8 @@
 'use strict';
 
 // Pass predictions: when a satellite rises over the user's horizon, how high it climbs, where it
-// sets, and whether it can be seen by eye (lit by the Sun while the user's sky is dark).
+// sets, and whether it can be seen by eye (lit by the Sun while the user's sky is dark). Also when it
+// goes into and out of Earth's shadow, and when it crosses the face of the Sun or Moon (transits).
 //
 // Visible ISS passes and starred satellites' passes also go to MainActivity (Android.setPassAlerts)
 // for pass notifications.
@@ -159,6 +160,266 @@ function describePass(satrec, observer, lat, lon, rise, set) {
 function compass(az) {
     const points = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
     return points[Math.round(((az % 360) + 360) % 360 / 22.5) % 16];
+}
+
+// ---- Earth's shadow ----
+
+/**
+ * When the satellite next goes into and comes out of Earth's shadow, from `from` (ms): { shadowed
+ * (now), changes: [times of the next two changes], searchedTo }. Over a couple of its orbits, at
+ * most two days: geostationary satellites only see eclipses for a few weeks around each equinox.
+ */
+function shadowChanges(sat, from) {
+    const periodMs = 2 * Math.PI / sat.satrec.no * 60_000;
+    const step = Math.min(Math.max(periodMs / 300, 10_000), 120_000);
+    const end = from + Math.min(Math.max(2.2 * periodMs, 3 * 3_600_000), 48 * 3_600_000);
+    const shadowed = t => {
+        const date = new Date(t);
+        const s = satelliteGlobe(sat.satrec, date);
+        return s ? inShadow(s, sunDirection(date)) : null;
+    };
+    const start = shadowed(from);
+    if (start === null) return null;
+    const changes = [];
+    let t0 = from, s0 = start;
+    for (let t1 = from + step; t1 <= end && changes.length < 2; t1 += step) {
+        const s1 = shadowed(t1);
+        if (s1 === null) break;
+        if (s1 !== s0) {
+            let a = t0, b = t1;
+            while (b - a > 1000) {
+                const mid = (a + b) / 2;
+                if (shadowed(mid) === s0) a = mid; else b = mid;
+            }
+            changes.push((a + b) / 2);
+        }
+        t0 = t1;
+        s0 = s1;
+    }
+    return { shadowed: start, changes, searchedTo: end };
+}
+
+// ---- Sun and Moon transits ----
+//
+// A satellite crosses the Sun (or Moon) for an observer on the line from the Sun through the
+// satellite. Where that line meets the ground races along a narrow track, a few km wide: the
+// transit's centre line. Seen from the centre line the satellite crosses the middle of the disc;
+// off it, nearer an edge, until it misses.
+
+/** How far ahead transits are searched for, and how close their centre line must come to the user. */
+const TRANSIT_DAYS = 7;
+const TRANSIT_SEARCH_KM = 150;
+const TRANSIT_STEP_MS = 10_000;
+/** Below this the Sun or Moon is too low, dim and blurred to watch a transit against. */
+const TRANSIT_MIN_ELEVATION = 5;
+/** Seconds either side of the transit for which its track is drawn. */
+const TRANSIT_PATH_S = 25;
+const SUN_RADIUS_DEGREES = 0.2666;
+const MOON_RADIUS_KM = 1737.4;
+
+function unit(v) {
+    const length = Math.hypot(...v);
+    return v.map(c => c / length);
+}
+
+/** Globe-space position of the satellite at `date`, or null if SGP4 fails. */
+function satelliteGlobe(satrec, date) {
+    const pv = propagate(satrec, date);
+    if (!pv) return null;
+    const g = geodetic(pv.position, satellite.gstime(date));
+    return toGlobe(g.lat, g.lon, g.altKm);
+}
+
+/** The Sun (a direction, at infinity) or the Moon (a position) at `date`, in globe space. */
+function transitSource(kind, date) {
+    return kind === 'sun' ? { dir: sunDirection(date) } : { pos: moonAt(date).globe };
+}
+
+/** Unit vector from globe-space point p towards the source. */
+function towardsSource(source, p) {
+    return source.dir ?? unit(source.pos.map((c, i) => c - p[i]));
+}
+
+/** The source's angular radius in radians, seen from globe-space point p. */
+function sourceRadius(source, p) {
+    if (source.dir) return SUN_RADIUS_DEGREES * Math.PI / 180;
+    return Math.asin(MOON_RADIUS_KM / (Math.hypot(...source.pos.map((c, i) => c - p[i])) * EARTH_RADIUS_KM));
+}
+
+/** Where the line from the source through the satellite at s meets the ground, or null if it misses. */
+function transitPoint(s, source) {
+    const d = towardsSource(source, s).map(c => -c);
+    const b = dot(s, d), c = dot(s, s) - 1;
+    const disc = b * b - c;
+    if (disc < 0) return null;
+    const along = -b - Math.sqrt(disc);
+    return along > 0 ? s.map((x, i) => x + along * d[i]) : null;
+}
+
+/** Great-circle distance in km between two points on (or above) the unit sphere. */
+function groundKm(a, b) {
+    return Math.acos(Math.max(-1, Math.min(1, dot(unit(a), unit(b))))) * EARTH_RADIUS_KM;
+}
+
+function globeLatLon(p) {
+    const r = Math.hypot(...p);
+    return [Math.asin(p[1] / r) * 180 / Math.PI, Math.atan2(p[0], p[2]) * 180 / Math.PI];
+}
+
+/** Initial bearing in degrees from globe point a to b. */
+function bearing(a, b) {
+    const [lat1, lon1] = globeLatLon(a), [lat2, lon2] = globeLatLon(b);
+    const p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180;
+    const y = Math.sin(dl) * Math.cos(p2);
+    const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+/** Angle in degrees between two directions. */
+function angleBetween(a, b) {
+    return Math.acos(Math.max(-1, Math.min(1, dot(unit(a), unit(b))))) * 180 / Math.PI;
+}
+
+/**
+ * Transits of `sat` across the Sun and Moon whose centre line passes within TRANSIT_SEARCH_KM of
+ * (lat, lon) in the next TRANSIT_DAYS from `from`, soonest first (see describeTransit).
+ */
+function findTransits(sat, lat, lon, from = simNow()) {
+    const observer = toGlobe(lat, lon, 0);
+    const end = from + TRANSIT_DAYS * 86_400_000;
+    // High orbits' tracks move slowly enough for a coarser step.
+    const periodMs = 2 * Math.PI / sat.satrec.no * 60_000;
+    const step = periodMs < 3 * 3_600_000 ? TRANSIT_STEP_MS : 6 * TRANSIT_STEP_MS;
+    const minElevation = TRANSIT_MIN_ELEVATION * Math.PI / 180;
+    const found = [];
+    for (const kind of ['sun', 'moon']) {
+        /** How far from the user the centre line is at time t, or null when there is none. */
+        const offset = t => {
+            const date = new Date(t);
+            const s = satelliteGlobe(sat.satrec, date);
+            const p = s && transitPoint(s, transitSource(kind, date));
+            return p ? groundKm(p, observer) : null;
+        };
+        // The last three samples, for spotting the centre line at its closest to the user.
+        let recent = [];
+        for (let t = from; t <= end;) {
+            const date = new Date(t);
+            const pv = propagate(sat.satrec, date);
+            if (!pv) {
+                recent = [];
+                t += step;
+                continue;
+            }
+            // A track is only ever within sight of the satellite (it stands over its own track at
+            // TRANSIT_MIN_ELEVATION or more), so while the satellite is far from the user, skip ahead
+            // by the least time it could take to come within reach: most of each orbit.
+            const { x, y, z } = pv.position;
+            const r = Math.hypot(x, y, z);
+            const gmst = satellite.gstime(date);
+            const below = [-x * Math.sin(gmst) + y * Math.cos(gmst), z, x * Math.cos(gmst) + y * Math.sin(gmst)];
+            const away = groundKm(below, observer);
+            const reachKm = (Math.acos(Math.min(1, EARTH_RADIUS_KM * Math.cos(minElevation) / r)) - minElevation) * EARTH_RADIUS_KM +
+                TRANSIT_SEARCH_KM + 100;
+            if (away > reachKm) {
+                // Its ground track moves no faster than its speed scaled down to the ground, plus the Earth's turning.
+                const v = pv.velocity;
+                const groundSpeed = Math.hypot(v.x, v.y, v.z) * EARTH_RADIUS_KM / r + 0.5;
+                t += Math.max(step, (away - reachKm) / groundSpeed * 1000);
+                recent = [];
+                continue;
+            }
+            recent.push([t, offset(t)]);
+            if (recent.length > 3) recent.shift();
+            const [[t0, d0] = [], [, d1] = [], [t2, d2] = []] = recent;
+            // The centre line at its closest to the user (it sweeps by at several km/s, so a coarse
+            // step can land well off it): narrow it down.
+            if (recent.length === 3 && d0 !== null && d1 !== null && d2 !== null && d1 <= d0 && d1 <= d2 && d1 < TRANSIT_SEARCH_KM + 1000) {
+                let a = t0, b = t2;
+                const g = (Math.sqrt(5) - 1) / 2;
+                for (let i = 0; i < 40 && b - a > 20; i++) {
+                    const c = b - g * (b - a), d = a + g * (b - a);
+                    if ((offset(c) ?? Infinity) < (offset(d) ?? Infinity)) b = d; else a = c;
+                }
+                const transit = describeTransit(sat, kind, (a + b) / 2, observer);
+                if (transit && transit.centreKm <= TRANSIT_SEARCH_KM) found.push(transit);
+            }
+            t += step;
+        }
+    }
+    return found.sort((a, b) => a.t - b.t);
+}
+
+/**
+ * A transit whose centre line is closest to the observer at t: { kind, t (closest to the disc's middle
+ * from here), centreKm and centreBearing (the centre line from here), halfWidthKm (how far either side
+ * of it the disc is crossed at all), visibleHere, separation and radius (degrees), durationS, az, el,
+ * rangeKm, sourceElevation, centre ([lat, lon]), path (transitPath) }; null if the Sun or Moon is too low.
+ */
+function describeTransit(sat, kind, t, observer) {
+    const date = new Date(t);
+    const source = transitSource(kind, date);
+    const s = satelliteGlobe(sat.satrec, date);
+    const centre = s && transitPoint(s, source);
+    if (!centre) return null;
+    const toSource = towardsSource(source, observer);
+    const sourceElevation = Math.asin(dot(unit(observer), toSource)) * 180 / Math.PI;
+    if (sourceElevation < TRANSIT_MIN_ELEVATION) return null;
+    const radius = sourceRadius(source, observer) * 180 / Math.PI;
+    // From here, when the satellite is closest to the disc's middle, and how close.
+    let separation = Infinity, closest = t;
+    for (let dt = -3000; dt <= 3000; dt += 25) {
+        const at = new Date(t + dt);
+        const s2 = satelliteGlobe(sat.satrec, at);
+        if (!s2) continue;
+        const gap = angleBetween(s2.map((c, i) => c - observer[i]), towardsSource(transitSource(kind, at), observer));
+        if (gap < separation) { separation = gap; closest = t + dt; }
+    }
+    const atClosest = satelliteGlobe(sat.satrec, new Date(closest)) ?? s;
+    const rangeKm = Math.hypot(...atClosest.map((c, i) => c - observer[i])) * EARTH_RADIUS_KM;
+    // How fast it crosses the sky, for how long it is in front of the disc.
+    const before = satelliteGlobe(sat.satrec, new Date(closest - 500)), after = satelliteGlobe(sat.satrec, new Date(closest + 500));
+    const rate = before && after ? angleBetween(before.map((c, i) => c - observer[i]), after.map((c, i) => c - observer[i])) : 0;
+    const durationS = separation < radius && rate > 0 ? 2 * Math.sqrt(radius * radius - separation * separation) / rate : 0;
+    // Across the track: the disc's radius at the satellite's distance, spread out on the ground by the
+    // Sun's or Moon's low angle.
+    const halfWidthKm = rangeKm * Math.tan(radius * Math.PI / 180) / Math.sin(sourceElevation * Math.PI / 180);
+    const [lat, lon] = globeLatLon(observer);
+    const [az, el] = azEl(skyDirection(atClosest, lat, lon));
+    return {
+        kind, t: closest,
+        centreKm: groundKm(centre, observer),
+        centreBearing: bearing(observer, centre),
+        halfWidthKm,
+        visibleHere: separation < radius,
+        separation, radius, durationS, az, el, rangeKm, sourceElevation,
+        centre: globeLatLon(centre),
+        path: transitPath(sat, kind, t),
+    };
+}
+
+/**
+ * The transit's track on the ground around t, for drawing: { centre, left, right } lists of globe
+ * points: the centre line, and the edges of the band from which the disc is crossed at all.
+ */
+function transitPath(sat, kind, t) {
+    const centre = [], left = [], right = [];
+    for (let dt = -TRANSIT_PATH_S * 1000; dt <= TRANSIT_PATH_S * 1000; dt += 200) {
+        const date = new Date(t + dt);
+        const source = transitSource(kind, date);
+        const s = satelliteGlobe(sat.satrec, date);
+        const p = s && transitPoint(s, source);
+        if (!p) continue;
+        const elevation = Math.asin(dot(unit(p), towardsSource(source, p)));
+        if (elevation <= 0) continue;
+        const previous = centre[centre.length - 1];
+        centre.push(p);
+        if (!previous) continue;
+        const across = unit(cross(unit(p), p.map((c, i) => c - previous[i])));
+        const half = Math.hypot(...s.map((c, i) => c - p[i])) * Math.tan(sourceRadius(source, p)) / Math.sin(elevation);
+        left.push(unit(p.map((c, i) => c + across[i] * half)));
+        right.push(unit(p.map((c, i) => c - across[i] * half)));
+    }
+    return { centre, left, right };
 }
 
 // ---- Pass alerts ----

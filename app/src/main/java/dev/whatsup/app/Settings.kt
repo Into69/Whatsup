@@ -16,6 +16,7 @@ enum class DisplayLayer(val key: String, @StringRes val title: Int, val shownByD
     MY_LOCATION("myLocation", R.string.layer_my_location),
     DAY_NIGHT("dayNight", R.string.layer_day_night),
     STARS("stars", R.string.layer_stars),
+    TRUE_SCALE("trueScale", R.string.layer_true_scale, shownByDefault = false),
 }
 
 /**

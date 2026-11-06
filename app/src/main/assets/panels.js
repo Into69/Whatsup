@@ -13,6 +13,7 @@
 
 const SEARCH_RESULTS = 30;
 const SHEET_REFRESH_MS = 1000;
+const TRANSIT_VIEW_ZOOM = 6;
 /** A "never rises" or "always up" answer is worked out again after this long on the clock. */
 const NEXT_PASS_RECHECK_MS = 10 * 60 * 1000;
 /** Orbital data older than this is flagged in the legend: the phone has likely been offline. */
@@ -32,8 +33,11 @@ const sheet = {
     /** The satellite the sheet shows, so a new selection rebuilds it. */
     sat: null,
     passesOpen: false,
+    transitsOpen: false,
     /** { sat, at (clock time), result (predictPasses with one pass) } for the next-pass line. */
     nextPass: null,
+    /** { sat, at, result (shadowChanges) } for the shadow line. */
+    shadow: null,
 };
 
 function updateSheet() {
@@ -43,6 +47,8 @@ function updateSheet() {
         sheet.node = null;
         sheet.sat = shown;
         sheet.passesOpen = false;
+        sheet.transitsOpen = false;
+        sheet.shadow = null;
         sheet.bodyTimes = null;
         if (shown) buildSheet(shown);
         overlaysChanged();
@@ -83,9 +89,11 @@ function buildSheet(sat) {
     follow.addEventListener('click', () => setFollowing(!following));
     const passes = el('button', 'passes-button', 'Passes');
     passes.addEventListener('click', () => togglePasses(sat));
+    const transits = el('button', 'transits-button', 'Transits');
+    transits.addEventListener('click', () => toggleTransits(sat));
     const align = el('button', '', 'Align dish');
     align.addEventListener('click', () => openDish(sat));
-    buttons.append(follow, passes, align);
+    buttons.append(follow, passes, transits, align);
 
     const approach = el('button', 'sheet-line sheet-approach');
     approach.addEventListener('click', () => {
@@ -93,8 +101,8 @@ function buildSheet(sat) {
         if (row) showApproach(row);
     });
     node.append(header, group, details, el('div', 'sheet-line sheet-orbit', describeOrbit(sat.satrec)),
-        el('div', 'sheet-line sheet-live'), el('div', 'sheet-line sheet-pointing'), el('div', 'sheet-line sheet-next'),
-        approach, buttons, el('div', 'sheet-passes'));
+        el('div', 'sheet-line sheet-live'), el('div', 'sheet-line sheet-shadow'), el('div', 'sheet-line sheet-pointing'),
+        el('div', 'sheet-line sheet-next'), approach, buttons, el('div', 'sheet-passes'), el('div', 'sheet-transits'));
     document.body.appendChild(node);
     sheet.node = node;
     refreshStar();
@@ -116,13 +124,12 @@ function refreshSheetLive() {
         return;
     }
     if (!sheet.node || !sat?.now) return;
-    const p = toGlobe(sat.now.lat, sat.now.lon, sat.now.altKm);
     sheet.node.querySelector('.sheet-live').textContent = [
         `${Math.round(sat.now.altKm).toLocaleString()} km up`,
         `${Math.round(sat.now.speedKmS * 3600).toLocaleString()} km/h`,
         `${Math.abs(sat.now.lat).toFixed(1)}°${sat.now.lat >= 0 ? 'N' : 'S'} ${Math.abs(sat.now.lon).toFixed(1)}°${sat.now.lon >= 0 ? 'E' : 'W'}`,
-        inShadow(p, sun) ? "In Earth's shadow" : 'In sunlight',
     ].join(' · ');
+    sheet.node.querySelector('.sheet-shadow').textContent = describeShadow(sat);
     sheet.node.querySelector('.sheet-pointing').textContent = describePointing(sat);
     sheet.node.querySelector('.sheet-next').textContent = describeNextPass(sat);
     const approach = nextApproach(sat);
@@ -168,6 +175,41 @@ function describeNextPass(sat) {
 timeListeners.push(() => {
     sheet.nextPass = null;
     refreshSheetLive();
+});
+
+/**
+ * In sunlight or Earth's shadow, and when that next changes: "In sunlight · into Earth's shadow in
+ * 12 min (9:42 PM) for 33 min". Kept until the next change, or for a while when there is none.
+ */
+function describeShadow(sat) {
+    const now = simNow();
+    let cached = sheet.shadow;
+    const result = cached?.sat === sat ? cached.result : null;
+    const valid = result && now >= cached.at && now < (result.changes[0] ?? cached.at + NEXT_PASS_RECHECK_MS);
+    if (!valid) {
+        try {
+            cached = sheet.shadow = { sat, at: now, result: shadowChanges(sat, now) };
+        } catch (e) {
+            console.error('Working out shadow times failed', e);
+            sheet.shadow = null;
+            return '';
+        }
+    }
+    const shadow = cached.result;
+    if (!shadow) return '';
+    const [change, after] = shadow.changes;
+    const time = t => clockTime(t, now);
+    const hours = Math.round((shadow.searchedTo - cached.at) / 3_600_000);
+    if (!shadow.shadowed) {
+        if (!change) return `☀ In sunlight · no eclipse in the next ${hours} h`;
+        return `☀ In sunlight · into Earth's shadow in ${describeDuration(change - now)} (${time(change)})` +
+            (after ? ` for ${describeDuration(after - change)}` : '');
+    }
+    if (!change) return `● In Earth's shadow for at least the next ${hours} h`;
+    return `● In Earth's shadow · back in sunlight in ${describeDuration(change - now)} (${time(change)})`;
+}
+timeListeners.push(() => {
+    sheet.shadow = null;
 });
 
 /** Where to point at the satellite from here: azimuth, elevation, skew and range. */
@@ -358,6 +400,76 @@ function togglePasses(sat) {
             list.replaceChildren(el('div', 'sheet-line', "Couldn't work out passes for this satellite."));
         }
     }, 30);
+}
+
+function toggleTransits(sat) {
+    const list = sheet.node.querySelector('.sheet-transits');
+    sheet.transitsOpen = !sheet.transitsOpen;
+    sheet.node.querySelector('.transits-button').classList.toggle('on', sheet.transitsOpen);
+    list.replaceChildren();
+    if (!sheet.transitsOpen) {
+        transitShown = null;
+        orbitLayer.dirty = true;
+        map.triggerRepaint();
+        return;
+    }
+    if (!here) {
+        list.append(el('div', 'sheet-line', 'Transits need your location.'));
+        return;
+    }
+    list.append(el('div', 'sheet-line', `Looking for Sun and Moon transits in the next ${TRANSIT_DAYS} days…`));
+    // Let the message paint before the second or so of calculation.
+    setTimeout(() => {
+        if (sheet.sat !== sat || !sheet.transitsOpen) return;
+        try {
+            list.replaceChildren(...transitRows(sat, findTransits(sat, here[1], here[0])));
+        } catch (e) {
+            console.error('Finding transits failed', e);
+            list.replaceChildren(el('div', 'sheet-line', "Couldn't work out transits for this satellite."));
+        }
+    }, 30);
+}
+
+function transitRows(sat, transits) {
+    if (!transits.length) {
+        return [el('div', 'sheet-line', `No Sun or Moon transits with a track within ${TRANSIT_SEARCH_KM} km of you in the next ${TRANSIT_DAYS} days.`)];
+    }
+    const day = t => new Date(t).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+    const time = t => new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return [
+        el('div', 'sheet-line sheet-hint',
+            `Next ${TRANSIT_DAYS} days, tracks within ${TRANSIT_SEARCH_KM} km. ✓ crosses the disc from right here. Tap one to see its track. ` +
+            'Never look at the Sun without a proper solar filter.'),
+        ...transits.map(transit => {
+            const body = transit.kind === 'sun' ? '☀ Sun' : '☾ Moon';
+            const row = el('button', 'pass transit' + (transit.visibleHere ? ' visible' : ''));
+            const where = transit.visibleHere
+                ? `✓ From here: ${transit.durationS.toFixed(2)} s across the disc, ${Math.round(transit.separation / transit.radius * 100)}% of the way out from its middle`
+                : `Track ${transit.centreKm < 1 ? 'right here' : `${Math.round(transit.centreKm)} km ${compass(transit.centreBearing)}`} of you, ` +
+                  `seen up to ${transit.halfWidthKm.toFixed(1)} km either side of it`;
+            row.append(
+                el('span', 'pass-when', `${body} transit · ${day(transit.t)} ${time(transit.t)}`),
+                el('span', 'pass-seen', where),
+                el('span', 'pass-what',
+                    `${sat.name} ${Math.round(transit.el)}° up in the ${compass(transit.az)}, ${Math.round(transit.rangeKm).toLocaleString()} km away · ` +
+                    `${transit.kind === 'sun' ? 'Sun' : 'Moon'} ${Math.round(transit.sourceElevation)}° up`),
+            );
+            row.addEventListener('click', () => showTransit(transit));
+            return row;
+        }),
+    ];
+}
+
+/** Goes to a transit: the clock to its moment, its track drawn, and the camera over it. */
+function showTransit(transit) {
+    transitShown = transit.path;
+    orbitLayer.dirty = true;
+    setTimeOffset(transit.t - Date.now());
+    showTimeBar();
+    const [lat, lon] = transit.centre;
+    // Close enough to see the track against towns and roads (zoom 6 as it looks; see visualZoom).
+    const zoom = TRANSIT_VIEW_ZOOM + Math.log2(Math.max(Math.cos(lat * Math.PI / 180), 0.01));
+    map.flyTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), zoom), duration: 2000 });
 }
 
 function passRows(passes) {
@@ -599,6 +711,7 @@ function back() {
     else if (events.node) closeEvents();
     else if (sky.open) closeSkyView();
     else if (timeBar.node) closeTimeBar();
+    else if (sheet.transitsOpen) toggleTransits(sheet.sat);
     else if (sheet.passesOpen) togglePasses(sheet.sat);
     else if (selected) select(null);
     else if (selectedBody) selectBody(null);

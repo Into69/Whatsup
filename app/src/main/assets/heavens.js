@@ -234,6 +234,8 @@ const SUN_ANGULAR_RADIUS = 0.2666 * Math.PI / 180;
 const MOON_RADIUS = 1737.4 / EARTH_RADIUS_KM;
 /** Smallest they are drawn (CSS px of radius), however far out the camera is. */
 const SUN_MIN_RADIUS_PX = 7, MOON_MIN_RADIUS_PX = 8;
+/** With layers.trueScale, only enough to still draw a pixel. */
+const TRUE_SCALE_MIN_RADIUS_PX = 0.6;
 /** The Sun's disc as a share of its sprite; the rest is glow. */
 const SUN_DISC_FRACTION = 0.3;
 /** Rise and set: where the upper edge meets the horizon, with refraction (degrees). */
@@ -431,13 +433,14 @@ const bodyLayer = {
         // The Sun, in effect at infinity like the stars: its true size there, or a little larger.
         const sunPos = camera.map((c, i) => c + sun[i] * STAR_DISTANCE);
         const sunEdge = sunPos.map((c, i) => c + across(sun)[i] * STAR_DISTANCE * Math.tan(SUN_ANGULAR_RADIUS));
-        bodyOnScreen.sun = draw(0, sunPos, Math.max(SUN_MIN_RADIUS_PX, distance(screen(sunPos), screen(sunEdge))), SUN_DISC_FRACTION);
+        const smallest = minimum => layers.trueScale ? TRUE_SCALE_MIN_RADIUS_PX : minimum;
+        bodyOnScreen.sun = draw(0, sunPos, Math.max(smallest(SUN_MIN_RADIUS_PX), distance(screen(sunPos), screen(sunEdge))), SUN_DISC_FRACTION);
 
         // The Moon, where it really is: lit from the Sun's side, turned so its north is towards Earth's.
         const m = moon.globe;
         const view = normalize(camera.map((c, i) => c - m[i]));
         const moonEdge = m.map((c, i) => c + across(view)[i] * MOON_RADIUS);
-        const moonRadius = Math.max(MOON_MIN_RADIUS_PX, distance(screen(m), screen(moonEdge)));
+        const moonRadius = Math.max(smallest(MOON_MIN_RADIUS_PX), distance(screen(m), screen(moonEdge)));
         const phaseAngle = Math.acos(Math.max(-1, Math.min(1, dot(sun, view))));
         const sunAcross = normalize(sun.map((c, i) => c - view[i] * dot(sun, view)));
         const sunAngle = screenAngle(m, sunAcross, MOON_RADIUS);

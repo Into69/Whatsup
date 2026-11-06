@@ -106,7 +106,7 @@ let here = null;
 /** Which parts of the drawing are shown; setLayers() changes them and tells layerListeners. */
 const layers = {
     orbits: true, groundTracks: true, altitudeLines: true, footprints: true, planes: false, geoBelt: true,
-    launches: true, myLocation: true, dayNight: true, stars: true,
+    launches: true, myLocation: true, dayNight: true, stars: true, trueScale: false,
 };
 const layerListeners = [applyLocationLayer];
 

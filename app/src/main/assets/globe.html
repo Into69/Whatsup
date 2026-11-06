@@ -72,7 +72,7 @@
             border: 0; background: rgba(255, 255, 255, .1); font-size: 20px; line-height: 1;
         }
         .sheet-line { display: flex; align-items: center; gap: 6px; margin-top: 6px; opacity: .9; }
-        .sheet-details, .sheet-orbit, .sheet-live, .sheet-pointing, .sheet-next { display: block; }
+        .sheet-details, .sheet-orbit, .sheet-live, .sheet-shadow, .sheet-pointing, .sheet-next { display: block; }
         .sheet-buttons { display: flex; gap: 8px; margin-top: 10px; }
         .sheet-buttons button {
             flex: 1; padding: 8px; border-radius: 10px;
@@ -83,6 +83,10 @@
         .pass-what { opacity: .75; font-size: 12px; }
         .pass.visible .pass-when, .pass-seen { color: #ffd166; }
         .pass-seen { font-size: 12px; }
+        /* Transits (panels.js): pass rows that can be tapped to show the track. */
+        button.transit { width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--line); border-radius: 0; color: inherit; }
+        .transit .pass-seen { color: #ffb347; }
+        .transit.visible .pass-seen { color: #7cf29c; }
 
         /* Search (panels.js). */
         .search {

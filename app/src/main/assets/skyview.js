@@ -16,6 +16,8 @@ const DEFAULT_CAMERA_FOV = 66;
 const SKY_TAP_RADIUS_PX = 30;
 const SKY_TRACK_COLOR = '#6ee7ff';
 const GEO_ARC_COLOR = 'rgba(110, 231, 255, 0.75)';
+/** The Sun's and Moon's radius in sky view, enlarged; see bodyRadius(). Smaller ones get a ring this size. */
+const SKY_SUN_RADIUS_PX = 10, SKY_MOON_RADIUS_PX = 11, SMALL_BODY_RING_PX = 9;
 /** Faintest star drawn in sky view. */
 const SKY_STAR_MAGNITUDE = 4.5;
 
@@ -352,14 +354,16 @@ function drawSky() {
 
     const sunPoint = project(skyDirection(sun.map(c => c * 1e6), lat, lon));
     if (sunPoint) {
+        const radius = bodyRadius(focal, SUN_RADIUS_DEGREES * Math.PI / 180, SKY_SUN_RADIUS_PX);
         ctx.fillStyle = '#ffd166';
         ctx.beginPath();
-        ctx.arc(sunPoint[0], sunPoint[1], 10, 0, 2 * Math.PI);
+        ctx.arc(sunPoint[0], sunPoint[1], radius, 0, 2 * Math.PI);
         ctx.fill();
-        ctx.fillText('Sun', sunPoint[0], sunPoint[1] - 16);
+        markSmall(ctx, sunPoint, radius, '#ffd166');
+        ctx.fillText('Sun', sunPoint[0], sunPoint[1] - Math.max(radius, SMALL_BODY_RING_PX) - 6);
         sky.drawn.push({ body: BODIES.sun, x: sunPoint[0], y: sunPoint[1] });
     }
-    if (layers.stars) drawMoon(ctx, project, lat, lon);
+    if (layers.stars) drawMoon(ctx, project, lat, lon, focal);
 
     for (const { sat: s, dir, sunlit } of sky.visible) {
         const point = project(dir);
@@ -430,12 +434,35 @@ function drawGeoArc(ctx, project, lat, lon) {
     ctx.restore();
 }
 
+/**
+ * How big to draw the Sun or Moon (angular radius in radians): at their true size over the camera's
+ * picture, so they sit on the real ones, or when the user wants true scale; else `enlarged` px, so
+ * they are easy to see and tap.
+ */
+function bodyRadius(focal, angularRadius, enlarged) {
+    if (!layers.trueScale && !sky.video?.videoWidth) return enlarged;
+    return Math.max(1, focal * Math.tan(angularRadius));
+}
+
+/** A faint ring round a body drawn too small to find easily. */
+function markSmall(ctx, point, radius, color) {
+    if (radius >= SMALL_BODY_RING_PX - 2) return;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(point[0], point[1], SMALL_BODY_RING_PX, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.restore();
+}
+
 /** The Moon, with its phase: lit on the side towards the Sun. */
-function drawMoon(ctx, project, lat, lon) {
+function drawMoon(ctx, project, lat, lon, focal) {
     const dir = skyDirection(moon.globe, lat, lon);
     const point = project(dir);
     if (!point) return;
-    const radius = 11;
+    const radius = bodyRadius(focal, sourceRadius(transitSource('moon', new Date(simNow())), toGlobe(lat, lon, 0)), SKY_MOON_RADIUS_PX);
     // Which way the Sun is from the Moon across the screen: a nudge towards it, projected.
     const toSun = skyDirection(sun.map(c => c * 1e6), lat, lon);
     const k = dot(toSun, dir);
@@ -459,8 +486,9 @@ function drawMoon(ctx, project, lat, lon) {
     ctx.ellipse(0, 0, radius * Math.abs(1 - 2 * moon.lit), radius, 0, 0, 2 * Math.PI);
     ctx.fill();
     ctx.restore();
+    markSmall(ctx, point, radius, '#e8e6dc');
     ctx.fillStyle = '#fff';
-    ctx.fillText(`Moon · ${Math.round(moon.lit * 100)}%`, point[0], point[1] - radius - 6);
+    ctx.fillText(`Moon · ${Math.round(moon.lit * 100)}%`, point[0], point[1] - Math.max(radius, SMALL_BODY_RING_PX) - 6);
     sky.drawn.push({ body: BODIES.moon, x: point[0], y: point[1] });
 }
 
