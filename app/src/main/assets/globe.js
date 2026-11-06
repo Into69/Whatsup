@@ -1,0 +1,157 @@
+'use strict';
+
+// The globe page. MainActivity drives it through window.globe:
+//   setTiles(tileSet)                       swap the raster tiles (TileSet.toJson())
+//   setLocation(lat, lon, accuracyM, centre) move the "you" marker, flying there when centre is true
+//   recentre()                              fly back to the last location
+//   setLayers(layers)                       show or hide parts of the drawing (Settings.layersJson())
+// and the other scripts add their own (see each one's last lines).
+
+/** Share of the screen's shorter side that the whole globe should fill. */
+const GLOBE_FILL = 0.9;
+
+// ---- The globe's clock ----
+// Everything drawn is for simNow(), which time.js's slider can move away from the real time. Pass
+// alerts are always for real time.
+
+/** How far the globe's clock is from the real one, in ms. */
+let timeOffsetMs = 0;
+/** Called when the offset changes, to redraw everything for the new time. */
+const timeListeners = [];
+
+function simNow() {
+    return Date.now() + timeOffsetMs;
+}
+
+function setTimeOffset(ms) {
+    timeOffsetMs = ms;
+    for (const listener of timeListeners) listener();
+}
+
+/**
+ * The zoom at which the whole globe fits the screen when centred on `lat`. MapLibre scales the
+ * globe by 1/cos(lat) so a zoom level shows the same ground scale as Web Mercator, so the globe
+ * would otherwise grow toward the poles.
+ */
+function fitZoom(lat) {
+    const side = Math.min(window.innerWidth, window.innerHeight);
+    const cos = Math.max(Math.cos(lat * Math.PI / 180), 0.1);
+    return Math.log2(GLOBE_FILL * side * Math.PI * cos / 512);
+}
+
+const map = new maplibregl.Map({
+    container: 'map',
+    style: {
+        version: 8,
+        projection: { type: 'globe' },
+        sky: { 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0] },
+        sources: {},
+        // The globe's colour until tiles load.
+        layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#0b1a2e' } }],
+    },
+    center: [0, 20],
+    zoom: fitZoom(20),
+    attributionControl: false,
+});
+// Map.setMinZoom() refuses anything below -2, which only just fits the geostationary belt on a phone;
+// highly elliptical orbits reach 27 Earth radii, so lower the transform's limit directly.
+map.transform.setMinZoom(-4);
+
+// Bottom left, clear of the Android recentre button in the bottom-right corner.
+map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
+
+const loaded = new Promise(resolve => map.once('load', () => {
+    map.addSource('accuracy', { type: 'geojson', data: emptyFeatures() });
+    map.addLayer({
+        id: 'accuracy',
+        type: 'fill',
+        source: 'accuracy',
+        paint: { 'fill-color': '#4fc3f7', 'fill-opacity': 0.15, 'fill-outline-color': '#4fc3f7' },
+    });
+    resolve();
+}));
+
+/** Below this zoom the location dot is drawn small. */
+const SMALL_MARKER_ZOOM = 0.5;
+
+let marker = null;
+let here = null;
+
+/** Which parts of the drawing are shown; setLayers() changes them and tells layerListeners. */
+const layers = {
+    orbits: true, groundTracks: true, altitudeLines: true, footprints: true, planes: false, geoBelt: true,
+    launches: true, myLocation: true, dayNight: true, stars: true,
+};
+const layerListeners = [applyLocationLayer];
+
+function setLayers(changes) {
+    Object.assign(layers, changes);
+    for (const listener of layerListeners) listener();
+}
+
+function applyLocationLayer() {
+    if (marker) marker.getElement().style.display = layers.myLocation ? '' : 'none';
+    loaded.then(() => map.setLayoutProperty('accuracy', 'visibility', layers.myLocation ? 'visible' : 'none'));
+}
+
+function setTiles(tileSet) {
+    loaded.then(() => {
+        if (map.getLayer('tiles')) map.removeLayer('tiles');
+        if (map.getSource('tiles')) map.removeSource('tiles');
+        map.addSource('tiles', {
+            type: 'raster',
+            tiles: tileSet.tiles,
+            tileSize: tileSet.tileSize,
+            maxzoom: tileSet.maxzoom,
+            attribution: tileSet.attribution,
+        });
+        // Under sun.js's night shading once it's there, else under everything drawn over the map.
+        map.addLayer({ id: 'tiles', type: 'raster', source: 'tiles' }, map.getLayer('night') ? 'night' : 'accuracy');
+    });
+}
+
+function setLocation(lat, lon, accuracyM, centre) {
+    here = [lon, lat];
+    if (!marker) {
+        const el = document.createElement('div');
+        el.className = 'you';
+        marker = new maplibregl.Marker({ element: el }).setLngLat(here).addTo(map);
+        applyLocationLayer();
+        sizeLocationMarker();
+    } else {
+        marker.setLngLat(here);
+    }
+    loaded.then(() => map.getSource('accuracy').setData(accuracyCircle(lat, lon, accuracyM)));
+    if (centre) recentre();
+}
+
+/** Zoomed far out the full-size dot would dwarf the Earth, so it shrinks to a small, still point. */
+function sizeLocationMarker() {
+    marker?.getElement().classList.toggle('you-small', map.getZoom() < SMALL_MARKER_ZOOM);
+}
+map.on('zoom', sizeLocationMarker);
+
+function recentre() {
+    if (!here) return;
+    map.flyTo({ center: here, zoom: fitZoom(here[1]), bearing: 0, pitch: 0, duration: 2500 });
+}
+
+function emptyFeatures() {
+    return { type: 'FeatureCollection', features: [] };
+}
+
+/** A polygon approximating a circle of radiusM metres around the point. */
+function accuracyCircle(lat, lon, radiusM) {
+    if (!(radiusM > 0)) return emptyFeatures();
+    const steps = 64;
+    const dLat = radiusM / 111320;
+    const dLon = dLat / Math.max(Math.cos(lat * Math.PI / 180), 0.01);
+    const ring = [];
+    for (let i = 0; i <= steps; i++) {
+        const a = (i / steps) * 2 * Math.PI;
+        ring.push([lon + dLon * Math.cos(a), lat + dLat * Math.sin(a)]);
+    }
+    return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: {} };
+}
+
+window.globe = { setTiles, setLocation, recentre, setLayers };

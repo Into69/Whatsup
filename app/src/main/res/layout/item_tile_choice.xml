@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A map style to choose: a preview tile, its name and source. Selected = outlined. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_weight="1"
+    android:background="@drawable/tile_choice_bg"
+    android:foreground="?android:attr/selectableItemBackground"
+    android:orientation="vertical"
+    android:padding="6dp">
+
+    <ImageView
+        android:id="@+id/tile_preview"
+        android:layout_width="match_parent"
+        android:layout_height="92dp"
+        android:background="@drawable/preview_bg"
+        android:importantForAccessibility="no"
+        android:scaleType="centerCrop" />
+
+    <TextView
+        android:id="@+id/tile_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:paddingHorizontal="4dp"
+        android:textColor="#FFFFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/tile_description"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="4dp"
+        android:paddingBottom="4dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp" />
+</LinearLayout>

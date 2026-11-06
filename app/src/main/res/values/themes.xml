@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.WhatsUp" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@color/space</item>
+    </style>
+
+    <style name="MapButton">
+        <item name="android:layout_width">48dp</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:layout_margin">16dp</item>
+        <item name="android:background">@drawable/map_button_bg</item>
+        <item name="android:tint">#FFFFFFFF</item>
+        <item name="android:padding">12dp</item>
+        <item name="android:scaleType">fitCenter</item>
+    </style>
+
+    <!-- Below another button in the column: closer together, so six fit a landscape screen. -->
+    <style name="MapButton.Stacked">
+        <item name="android:layout_marginTop">0dp</item>
+        <item name="android:layout_marginBottom">10dp</item>
+    </style>
+</resources>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="space">#FF05070D</color>
+    <color name="surface">#FF12151C</color>
+    <color name="accent">#FF4FC3F7</color>
+    <color name="button">#B312151C</color>
+    <!-- Settings cards. -->
+    <color name="card">#FF1A1E27</color>
+    <color name="card_stroke">#FF262B36</color>
+    <color name="text_secondary">#FFA0A8B8</color>
+</resources>

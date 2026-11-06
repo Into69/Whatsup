@@ -1,0 +1,220 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <link rel="stylesheet" href="maplibre/maplibre-gl.css">
+    <style>
+        :root {
+            --panel: rgba(18, 21, 28, .92);
+            --line: rgba(255, 255, 255, .2);
+            --accent: #4fc3f7;
+            --safe-bottom: max(16px, env(safe-area-inset-bottom));
+            --safe-top: max(16px, env(safe-area-inset-top));
+        }
+        html, body, #map { margin: 0; width: 100%; height: 100%; background: #05070d; overflow: hidden; }
+        body { font: 13px/1.35 system-ui, sans-serif; color: #fff; }
+        button { font: inherit; color: inherit; }
+        /* Clear of the system bars; MainActivity draws edge to edge. */
+        .maplibregl-ctrl-bottom-left { margin-bottom: var(--safe-bottom); }
+
+        .you {
+            width: 16px; height: 16px; border-radius: 50%;
+            background: #4fc3f7; border: 3px solid #fff;
+            box-shadow: 0 0 6px rgba(0, 0, 0, .6);
+        }
+        .you::after {
+            content: ""; position: absolute; inset: -3px; border-radius: 50%;
+            border: 3px solid #4fc3f7; animation: pulse 2s ease-out infinite;
+        }
+        @keyframes pulse {
+            from { transform: scale(1); opacity: .9; }
+            to { transform: scale(3.5); opacity: 0; }
+        }
+        /* Zoomed far out (globe.js): small and still, so it doesn't dwarf the Earth. */
+        .you.you-small { width: 6px; height: 6px; border-width: 1.5px; }
+        .you.you-small::after { display: none; }
+
+        /* Satellite labels; satellites.js sets transform to the projected position. */
+        .sat {
+            position: absolute; left: 0; top: 0; z-index: 1;
+            display: flex; align-items: center; gap: 4px;
+            margin: -12px 0 0 -12px; pointer-events: none;
+            font: 12px/1.25 system-ui, sans-serif; color: #fff;
+            text-shadow: 0 0 3px #000, 0 0 6px #000;
+        }
+        .sat-icon {
+            width: 24px; height: 24px; flex: none;
+            filter: drop-shadow(0 0 4px rgba(255, 209, 102, .9));
+            background: no-repeat center/contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='%23ffd166'%3E%3Crect x='9' y='9' width='6' height='6' rx='1'/%3E%3Crect x='1' y='4' width='6' height='16' rx='.5'/%3E%3Crect x='17' y='4' width='6' height='16' rx='.5'/%3E%3Crect x='7' y='11.25' width='10' height='1.5'/%3E%3C/g%3E%3C/svg%3E");
+        }
+        /* A tapped dot: the dot itself is drawn in WebGL, so the icon is only a spacer. */
+        .sat-selected .sat-icon { background: none; filter: none; }
+        .sat-text b { display: block; font-size: 13px; }
+        .sat-motion { opacity: .85; white-space: nowrap; }
+        .sat-flipped { flex-direction: row-reverse; text-align: right; }
+
+        .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+        /* Info sheet for the selected satellite (panels.js). */
+        .sheet {
+            position: absolute; left: 8px; right: 8px; bottom: var(--safe-bottom); z-index: 5;
+            max-height: 55%; overflow-y: auto;
+            background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+            padding: 12px 14px;
+        }
+        .sheet-header { display: flex; align-items: flex-start; gap: 8px; }
+        .sheet-title { flex: 1; min-width: 0; }
+        .sheet-title b { font-size: 16px; }
+        .sheet-sub, .sheet-hint { opacity: .65; font-size: 12px; }
+        .sheet-close {
+            flex: none; width: 32px; height: 32px; border-radius: 50%;
+            border: 0; background: rgba(255, 255, 255, .1); font-size: 20px; line-height: 1;
+        }
+        .sheet-line { display: flex; align-items: center; gap: 6px; margin-top: 6px; opacity: .9; }
+        .sheet-details, .sheet-orbit, .sheet-live, .sheet-pointing, .sheet-next { display: block; }
+        .sheet-buttons { display: flex; gap: 8px; margin-top: 10px; }
+        .sheet-buttons button {
+            flex: 1; padding: 8px; border-radius: 10px;
+            border: 1px solid var(--line); background: transparent;
+        }
+        .sheet-buttons button.on { background: var(--accent); border-color: var(--accent); color: #05070d; }
+        .pass { display: flex; flex-direction: column; padding: 6px 0; border-top: 1px solid var(--line); margin-top: 6px; }
+        .pass-what { opacity: .75; font-size: 12px; }
+        .pass.visible .pass-when, .pass-seen { color: #ffd166; }
+        .pass-seen { font-size: 12px; }
+
+        /* Search (panels.js). */
+        .search {
+            /* Right of the margin is MainActivity's column of buttons. */
+            position: absolute; left: 8px; right: 72px; top: var(--safe-top); z-index: 6;
+            max-height: 70%; display: flex; flex-direction: column;
+            background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px;
+        }
+        .search-row { display: flex; gap: 8px; align-items: center; }
+        .search input {
+            flex: 1; min-width: 0; padding: 10px; border-radius: 10px; font: inherit; font-size: 15px;
+            border: 1px solid var(--line); background: rgba(0, 0, 0, .3); color: #fff;
+        }
+        .search-results { overflow-y: auto; margin-top: 6px; }
+        .search-result {
+            display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+            padding: 9px 6px; border: 0; border-top: 1px solid var(--line); background: none;
+        }
+        .search-sub { margin-left: auto; opacity: .55; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+        .search-empty { padding: 10px 6px; opacity: .65; }
+
+        /* Colour legend (panels.js), above the attribution button. */
+        .legend {
+            position: absolute; left: 10px; bottom: calc(var(--safe-bottom) + 34px); z-index: 2;
+            background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px 9px;
+            font-size: 12px; max-width: 70%;
+        }
+        .legend-dots { display: flex; gap: 4px; flex-wrap: wrap; max-width: 120px; }
+        .legend-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+        .legend-count { margin-left: auto; padding-left: 10px; opacity: .6; }
+        .legend-note { opacity: .55; font-size: 11px; margin-top: 4px; }
+
+        .warning { color: #ffb347; }
+        .sheet-buttons button:disabled { opacity: .4; }
+        .sheet-star { font-size: 18px; }
+        .sheet-star.on { color: #ffd166; }
+        .sheet-approach {
+            display: block; width: 100%; text-align: left; padding: 6px 8px; border-radius: 8px;
+            border: 1px solid rgba(255, 179, 71, .5); background: rgba(255, 179, 71, .1); color: #ffcf8a;
+        }
+        .search-heading { padding: 8px 6px 2px; font-weight: 600; color: #ffd166; }
+
+        /* Two or more choices side by side (dish aim, event tabs). */
+        .segmented { display: flex; flex: 1; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+        .segmented button { flex: 1; padding: 7px 4px; border: 0; background: transparent; }
+        .segmented button.on { background: var(--accent); color: #05070d; }
+
+        /* Sky view (skyview.js), over everything but the sheet. */
+        #sky { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 4; }
+        #sky-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 3; }
+        .sky-button {
+            position: absolute; left: 12px; top: var(--safe-top); z-index: 4;
+            width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line);
+            background: var(--panel); font-size: 22px; line-height: 1;
+        }
+        #sky-camera { top: calc(var(--safe-top) + 50px); font-size: 17px; }
+        #sky-camera.on { background: var(--accent); }
+
+        /* Dish aligner (dish.js), over everything. */
+        .dish {
+            position: absolute; inset: 0; z-index: 7; overflow-y: auto;
+            background: #0b0e14; padding: var(--safe-top) 14px var(--safe-bottom);
+        }
+        .dish .segmented { margin-top: 10px; }
+        .dish-target { display: block; font-weight: 600; }
+        .dish-scope { display: block; width: min(78vw, 46vh); aspect-ratio: 1; margin: 10px auto 4px; }
+        .dish-steps { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+        .dish-step { padding: 7px 10px; border-radius: 8px; background: rgba(110, 231, 255, .12); font-size: 15px; font-weight: 600; }
+        .dish-step.close { background: rgba(255, 209, 102, .16); color: #ffd166; }
+        .dish-step.good { background: rgba(124, 242, 156, .16); color: #7cf29c; }
+        .dish-section { margin-top: 14px; font-weight: 600; color: var(--accent); }
+        .dish-phone, .dish-compass, .dish-calibration { display: block; }
+
+        /* Events (events.js): launches and close approaches. */
+        .events {
+            position: absolute; left: 8px; right: 72px; top: var(--safe-top); z-index: 6;
+            max-height: 78%; display: flex; flex-direction: column;
+            background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px;
+        }
+        .events .sheet-header { align-items: center; }
+        .events-body { overflow-y: auto; margin-top: 6px; }
+        .event-row {
+            display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left;
+            padding: 9px 6px; border: 0; border-top: 1px solid var(--line); background: none;
+        }
+        .event-when { font-size: 12px; color: #ffd166; }
+        .event-sub { font-size: 12px; opacity: .7; }
+        .event-action {
+            display: block; margin: 8px auto; padding: 9px 16px; border-radius: 10px;
+            border: 1px solid var(--accent); background: transparent; color: var(--accent);
+        }
+        .event-filter { display: flex; align-items: center; gap: 6px; padding: 6px; font-size: 12px; }
+        .launch-marker {
+            display: flex; align-items: center; gap: 3px; cursor: pointer;
+            font: 11px/1.2 system-ui, sans-serif; color: #fff; text-shadow: 0 0 3px #000, 0 0 6px #000;
+            white-space: nowrap;
+        }
+        .launch-icon { font-size: 16px; }
+        .launch-marker.later { opacity: .7; }
+        .launch-marker.later .launch-icon { font-size: 12px; }
+        .launch-marker.later .launch-text { display: none; }
+
+        /* Time travel (time.js). */
+        .timebar {
+            position: absolute; left: 8px; right: 72px; top: var(--safe-top); z-index: 5;
+            background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px;
+        }
+        .time-slider { width: 100%; margin: 12px 0 4px; accent-color: var(--accent); }
+        .timebar .sheet-buttons button { padding: 7px 2px; font-size: 12px; }
+        .time-pill {
+            position: absolute; left: 50%; transform: translateX(-50%); top: var(--safe-top); z-index: 3;
+            padding: 6px 12px; border-radius: 16px; border: 1px solid var(--accent);
+            background: var(--panel); color: var(--accent); white-space: nowrap;
+        }
+        .legend.stale::after { content: "!"; color: #ffb347; font-weight: 700; margin-left: 4px; }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+<script src="maplibre/maplibre-gl.js"></script>
+<script src="satellite/satellite.min.js"></script>
+<script src="globe.js"></script>
+<script src="names.js"></script>
+<script src="stars.js"></script>
+<script src="satellites.js"></script>
+<script src="sun.js"></script>
+<script src="heavens.js"></script>
+<script src="passes.js"></script>
+<script src="skyview.js"></script>
+<script src="dish.js"></script>
+<script src="events.js"></script>
+<script src="time.js"></script>
+<script src="panels.js"></script>
+</body>
+</html>
