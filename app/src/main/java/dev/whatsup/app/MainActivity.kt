@@ -63,6 +63,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     private var pageReady = false
     private var lastLocation: Location? = null
+    /** The location set by hand that lastLocation holds, or null while it is the phone's. */
+    private var shownManualLocation: Place? = null
     /** The globe flies to the first fix only; later fixes just move the marker. */
     private var centredOnFix = false
     private var shownTileSetId: String? = null
@@ -119,7 +121,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { granted ->
         if (granted.values.any { it }) {
-            tracker.start()
+            if (settings.activeManualLocation == null) tracker.start()
         } else {
             Toast.makeText(this, R.string.location_denied, Toast.LENGTH_LONG).show()
         }
@@ -139,6 +141,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         conjunctions = ConjunctionFeed(this, downloadTracker)
         launches = LaunchFeed(this)
         tracker = LocationTracker(this) { location ->
+            // A last fix can still arrive just after switching to a location set by hand.
+            if (settings.activeManualLocation != null) return@LocationTracker
             lastLocation = location
             pushLocation()
             pushCompass()
@@ -249,6 +253,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     override fun onStart() {
         super.onStart()
+        // A location set by hand needs no permission; applyLocationSource() in onResume uses it.
+        if (settings.activeManualLocation != null) return
         val permissions = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         if (permissions.any { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
             tracker.start()
@@ -257,11 +263,44 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         }
     }
 
+    /**
+     * Uses the location set by hand in SettingsActivity, if it is on, in place of the phone's (whose
+     * tracking stops); when it is turned off, back to the phone's. The globe flies to the new one.
+     */
+    private fun applyLocationSource() {
+        val manual = settings.activeManualLocation
+        if (manual != null) {
+            tracker.stop()
+            if (manual == shownManualLocation) return
+            shownManualLocation = manual
+            lastLocation = Location(MANUAL_PROVIDER).apply {
+                latitude = manual.position.lat
+                longitude = manual.position.lon
+            }
+            centredOnFix = false
+            pushLocation()
+            pushCompass()
+        } else if (shownManualLocation != null) {
+            // Back to the phone's: fly to its first fix, as at start.
+            shownManualLocation = null
+            lastLocation = null
+            centredOnFix = false
+            val permissions = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            if (permissions.any { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
+                tracker.start()
+            } else {
+                requestPermission.launch(permissions)
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         webView.onResume()
         applyCacheMode()
-        // Picks up a tile set, satellite groups or layers chosen in SettingsActivity.
+        // Picks up a location set by hand (or turned off), a tile set, satellite groups or layers
+        // chosen in SettingsActivity.
+        applyLocationSource()
         pushTileSet()
         pushLayers()
         loadSatellites()
@@ -568,6 +607,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     private companion object {
         const val TAG = "MainActivity"
+        /** The provider name of a Location made from one set by hand. */
+        const val MANUAL_PROVIDER = "manual"
         /** How long finished downloads stay on screen. */
         const val DOWNLOADS_LINGER_MS = 2500L
         /** Waiting downloads named in the queue line; the rest are counted. */

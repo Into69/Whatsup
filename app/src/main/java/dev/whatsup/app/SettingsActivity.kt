@@ -20,7 +20,8 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 /**
- * The settings screen, as sections of cards: map style (a grid of previews), satellites (a card per
+ * The settings screen, as sections of cards: location (the phone's, or one set by hand), map style
+ * (a grid of previews), satellites (a card per
  * SatelliteCategory, folding open to its groups), display layers, alerts, and about. Built in code
  * from small row layouts, since the groups, layers and tile sets are all lists defined elsewhere.
  */
@@ -52,6 +53,7 @@ class SettingsActivity : ComponentActivity() {
             // At first, open the categories with something switched on, so the user sees what is shown.
             ?: SatelliteCategory.entries.filter { category -> category.groups.any(settings::isShown) }
 
+        addLocation()
         addMapStyles()
         addSatellites()
         addDisplay()
@@ -65,6 +67,103 @@ class SettingsActivity : ComponentActivity() {
     }
 
     // ---- Sections ----
+
+    /**
+     * The phone's location, or one set by hand: typed as an address, latitude and longitude, or
+     * MGRS, found (Places), then shown in all three forms to check.
+     */
+    private fun addLocation() {
+        addSectionHeader(R.drawable.ic_my_location, R.string.section_location)
+        val card = addCard()
+        val (title, _) = splitTitle(getString(R.string.manual_location))
+        val result = TextView(this)
+        lateinit var manual: Switch
+        manual = addSwitchRow(card, title, describeLocationSource(), settings.useManualLocation) { on ->
+            if (on && settings.manualLocation == null) {
+                manual.isChecked = false
+                result.text = getString(R.string.manual_location_first)
+                return@addSwitchRow
+            }
+            settings.useManualLocation = on
+            card.getChildAt(0).findViewById<TextView>(R.id.row_subtitle).text = describeLocationSource()
+        }
+        addDivider(card)
+
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = android.view.Gravity.CENTER_VERTICAL
+        row.setPadding(dp(16), dp(10), dp(12), dp(4))
+        val input = android.widget.EditText(this)
+        input.hint = getString(R.string.manual_location_hint)
+        input.setSingleLine()
+        input.textSize = 15f
+        input.setTextColor(getColor(android.R.color.white))
+        input.setHintTextColor(getColor(R.color.text_secondary))
+        input.imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+        input.backgroundTintList = ColorStateList.valueOf(getColor(R.color.accent))
+        val find = android.widget.Button(this)
+        find.text = getString(R.string.manual_location_find)
+        find.isAllCaps = false
+        row.addView(input, LinearLayout.LayoutParams(0, WRAP, 1f))
+        row.addView(find, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = dp(8) })
+        card.addView(row)
+
+        result.setTextColor(getColor(R.color.text_secondary))
+        result.textSize = 13f
+        result.setLineSpacing(0f, 1.2f)
+        result.setPadding(dp(16), dp(4), dp(16), dp(14))
+        result.setTextIsSelectable(true)
+        settings.manualLocation?.let { result.text = describePlace(it) }
+        card.addView(result)
+
+        val search = {
+            val text = input.text.toString()
+            if (text.isNotBlank()) {
+                find.isEnabled = false
+                result.text = getString(R.string.manual_location_looking)
+                lifecycleScope.launch {
+                    val place = Places.find(this@SettingsActivity, text)
+                    find.isEnabled = true
+                    if (place == null) {
+                        result.text = getString(R.string.manual_location_not_found, text.trim())
+                        return@launch
+                    }
+                    settings.manualLocation = place
+                    settings.useManualLocation = true
+                    manual.isChecked = true
+                    card.getChildAt(0).findViewById<TextView>(R.id.row_subtitle).text = describeLocationSource()
+                    result.text = describePlace(place)
+                }
+            }
+        }
+        find.setOnClickListener { search() }
+        input.setOnEditorActionListener { _, _, _ ->
+            search()
+            true
+        }
+    }
+
+    private fun describeLocationSource(): String {
+        val place = settings.activeManualLocation ?: return getString(R.string.manual_location_off)
+        return getString(R.string.manual_location_on, place.label.ifEmpty { place.position.format() })
+    }
+
+    /** A found place in every form: its name, latitude and longitude, and MGRS. */
+    private fun describePlace(place: Place): String {
+        val how = getString(
+            when (place.source) {
+                Place.Source.COORDINATES -> R.string.manual_location_from_coordinates
+                Place.Source.MGRS -> R.string.manual_location_from_mgrs
+                Place.Source.ADDRESS -> R.string.manual_location_from_address
+            },
+        )
+        val mgrs = Coordinates.toMgrs(place.position)
+        return listOfNotNull(
+            "✓ $how: ${place.label}",
+            getString(R.string.manual_location_lat_lon, place.position.format()),
+            mgrs?.let { getString(R.string.manual_location_mgrs, it) },
+        ).joinToString("\n")
+    }
 
     private fun addMapStyles() {
         addSectionHeader(R.drawable.ic_map, R.string.section_map)

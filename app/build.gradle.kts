@@ -47,4 +47,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // Serves the bundled globe page from https://appassets.androidplatform.net so it is a secure origin.
     implementation("androidx.webkit:webkit:1.12.1")
+
+    testImplementation("junit:junit:4.13.2")
 }

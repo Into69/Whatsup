@@ -86,6 +86,29 @@ class Settings(context: Context) {
         get() = prefs.getString(KEY_FAVOURITES, "").orEmpty().split(',').mapNotNull { it.toIntOrNull() }.toSet()
         set(value) = prefs.edit().putString(KEY_FAVOURITES, value.joinToString(",")).apply()
 
+    /** A location the user set by hand; used instead of the phone's while [useManualLocation]. */
+    var manualLocation: Place?
+        get() {
+            val lat = prefs.getString(KEY_MANUAL_LAT, null)?.toDoubleOrNull() ?: return null
+            val lon = prefs.getString(KEY_MANUAL_LON, null)?.toDoubleOrNull() ?: return null
+            val source = Place.Source.entries.find { it.name == prefs.getString(KEY_MANUAL_SOURCE, null) } ?: Place.Source.COORDINATES
+            return Place(LatLon(lat, lon), prefs.getString(KEY_MANUAL_LABEL, null).orEmpty(), source)
+        }
+        set(value) = prefs.edit()
+            .putString(KEY_MANUAL_LAT, value?.position?.lat?.toString())
+            .putString(KEY_MANUAL_LON, value?.position?.lon?.toString())
+            .putString(KEY_MANUAL_LABEL, value?.label)
+            .putString(KEY_MANUAL_SOURCE, value?.source?.name)
+            .apply()
+
+    var useManualLocation: Boolean
+        get() = prefs.getBoolean(KEY_USE_MANUAL_LOCATION, false)
+        set(value) = prefs.edit().putBoolean(KEY_USE_MANUAL_LOCATION, value).apply()
+
+    /** The manual location when it is turned on, else null (use the phone's). */
+    val activeManualLocation: Place?
+        get() = if (useManualLocation) manualLocation else null
+
     /** Whether the map's column of buttons is folded away under its toggle. */
     var buttonsHidden: Boolean
         get() = prefs.getBoolean(KEY_BUTTONS_HIDDEN, false)
@@ -113,5 +136,10 @@ class Settings(context: Context) {
         const val KEY_FAVOURITES = "favourites"
         const val KEY_COMPASS_OFFSET = "compassOffset"
         const val KEY_BUTTONS_HIDDEN = "buttonsHidden"
+        const val KEY_MANUAL_LAT = "manualLat"
+        const val KEY_MANUAL_LON = "manualLon"
+        const val KEY_MANUAL_LABEL = "manualLabel"
+        const val KEY_MANUAL_SOURCE = "manualSource"
+        const val KEY_USE_MANUAL_LOCATION = "useManualLocation"
     }
 }
