@@ -3,7 +3,7 @@ package dev.whatsup.app
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** A raster tile source the globe can draw. Every one listed here is free and needs no API key. */
+/** A raster tile source the globe can draw. Every one listed here needs no API key. */
 data class TileSet(
     val id: String,
     val name: String,
@@ -56,9 +56,24 @@ object TileSets {
             attribution = "&copy; Esri",
             maxZoom = 19,
         ),
+        // Google's own tile servers, by the user's choice. Google's terms only allow its maps through
+        // its paid Maps APIs, so these may be blocked at any time, and shouldn't ship in a published app.
+        googleTileSet("google-hybrid", "Google Hybrid", "Google satellite imagery with roads and labels", "y"),
+        googleTileSet("google-roads", "Google Roads", "Google road map", "m"),
+        googleTileSet("google-terrain", "Google Terrain", "Google terrain and relief", "p"),
     )
 
     val default = all.first()
+
+    /** A Google map layer (lyrs=): its four servers mt0 to mt3 share the load. */
+    private fun googleTileSet(id: String, name: String, description: String, layer: String) = TileSet(
+        id = id,
+        name = name,
+        description = description,
+        urls = (0..3).map { "https://mt$it.google.com/vt/lyrs=$layer&x={x}&y={y}&z={z}" },
+        attribution = "Map data &copy; Google",
+        maxZoom = 20,
+    )
 
     /** A saved choice that is no longer offered (such as the CARTO maps, since dropped) falls back to the default. */
     fun byId(id: String?): TileSet = all.firstOrNull { it.id == id } ?: default
