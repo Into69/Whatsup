@@ -38,7 +38,7 @@
                     android:id="@+id/buttons_toggle"
                     style="@style/MapButton"
                     android:layout_height="28dp"
-                    android:layout_marginBottom="6dp"
+                    android:layout_marginBottom="3dp"
                     android:contentDescription="@string/hide_buttons"
                     android:padding="2dp"
                     android:src="@drawable/ic_expand" />
