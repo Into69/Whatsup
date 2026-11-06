@@ -58,21 +58,33 @@ object TileSets {
         ),
         // Google's own tile servers, by the user's choice. Google's terms only allow its maps through
         // its paid Maps APIs, so these may be blocked at any time, and shouldn't ship in a published app.
-        googleTileSet("google-hybrid", "Google Hybrid", "Google satellite imagery with roads and labels", "y"),
+        googleTileSet(
+            "google-hybrid", "Google Hybrid", "Google satellite imagery with roads and labels", "y",
+            // Satellite imagery from Google's providers, under Google's roads and labels.
+            attribution = "Imagery &copy; Google and its imagery providers, Map data &copy; Google",
+        ),
         googleTileSet("google-roads", "Google Roads", "Google road map", "m"),
-        googleTileSet("google-terrain", "Google Terrain", "Google terrain and relief", "p"),
+        // Terrain has real detail to zoom 19; from 20 Google sends blank tiles, so 19's are enlarged instead.
+        googleTileSet("google-terrain", "Google Terrain", "Google terrain and relief", "p", maxZoom = 19),
     )
 
     val default = all.first()
 
     /** A Google map layer (lyrs=): its four servers mt0 to mt3 share the load. */
-    private fun googleTileSet(id: String, name: String, description: String, layer: String) = TileSet(
+    private fun googleTileSet(
+        id: String,
+        name: String,
+        description: String,
+        layer: String,
+        attribution: String = "Map data &copy; Google",
+        maxZoom: Int = 20,
+    ) = TileSet(
         id = id,
         name = name,
         description = description,
         urls = (0..3).map { "https://mt$it.google.com/vt/lyrs=$layer&x={x}&y={y}&z={z}" },
-        attribution = "Map data &copy; Google",
-        maxZoom = 20,
+        attribution = attribution,
+        maxZoom = maxZoom,
     )
 
     /** A saved choice that is no longer offered (such as the CARTO maps, since dropped) falls back to the default. */
