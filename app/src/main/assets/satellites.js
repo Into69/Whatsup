@@ -56,8 +56,6 @@ const SELECTED = [1, 1, 1, 1], SELECTED_SIZE = 7;
 /** Coverage footprint rings: where the satellite is on the horizon, and FOOTPRINT_HIGH_ELEVATION up. */
 const FOOTPRINT = [0.31, 0.76, 0.97, 0.75], FOOTPRINT_HIGH = [0.31, 0.76, 0.97, 0.35], FOOTPRINT_SIZE = 2;
 const FOOTPRINT_DOTS = 360, FOOTPRINT_HIGH_ELEVATION = 10;
-/** A Sun or Moon transit's track (passes.js): the centre line, and the edges of the band it is seen from. */
-const TRANSIT_LINE = [1, 0.55, 0.15, 0.95], TRANSIT_EDGE = [1, 0.55, 0.15, 0.45], TRANSIT_SIZE = 2.5;
 
 /** Groups whose orbital planes are drawn (layers.planes): near-circular constellations. */
 const PLANE_GROUPS = new Set(['starlink', 'oneweb', 'amazon-leo', 'qianfan', 'guowang', 'iridium', 'globalstar', 'orbcomm', 'gnss', 'planet', 'spire']);
@@ -86,8 +84,6 @@ let selected = null;
 let selectedBody = null;
 /** The other satellite of a close approach the user picked (events.js), shown with the selection. */
 let partner = null;
-/** The track of the transit the user picked (passes.js's transitPath), drawn until the selection changes. */
-let transitShown = null;
 /** Catalogue numbers of the satellites the user has starred; panels.js keeps it. */
 const favourites = new Set();
 let showBelt = false;
@@ -334,7 +330,6 @@ function select(sat) {
     selected = sat;
     selectedBody = null;
     partner = null;
-    transitShown = null;
     following = false;
     loaded.then(updateGroundTracks);
     tick();
@@ -740,13 +735,6 @@ const orbitLayer = {
                     this.point(sat.now.lat, sat.now.lon, sat.now.altKm * i / TETHER_DOTS, TETHER, TETHER_SIZE);
                 }
             }
-        }
-        if (transitShown) {
-            // Lifted a little off the ground, clear of the surface it is drawn on.
-            const lift = p => p.map(c => c * 1.0002);
-            for (const p of transitShown.left) this.pointAt(...lift(p), TRANSIT_EDGE, TRANSIT_SIZE - 0.7);
-            for (const p of transitShown.right) this.pointAt(...lift(p), TRANSIT_EDGE, TRANSIT_SIZE - 0.7);
-            for (const p of transitShown.centre) this.pointAt(...lift(p), TRANSIT_LINE, TRANSIT_SIZE);
         }
         if (layers.footprints && selected?.now) {
             const { lat, lon, altKm } = selected.now;

@@ -13,7 +13,6 @@
 
 const SEARCH_RESULTS = 30;
 const SHEET_REFRESH_MS = 1000;
-const TRANSIT_VIEW_ZOOM = 6;
 /** A "never rises" or "always up" answer is worked out again after this long on the clock. */
 const NEXT_PASS_RECHECK_MS = 10 * 60 * 1000;
 /** Orbital data older than this is flagged in the legend: the phone has likely been offline. */
@@ -33,7 +32,7 @@ const sheet = {
     /** The satellite the sheet shows, so a new selection rebuilds it. */
     sat: null,
     passesOpen: false,
-    transitsOpen: false,
+    outagesOpen: false,
     /** { sat, at (clock time), result (predictPasses with one pass) } for the next-pass line. */
     nextPass: null,
     /** { sat, at, result (shadowChanges) } for the shadow line. */
@@ -47,7 +46,7 @@ function updateSheet() {
         sheet.node = null;
         sheet.sat = shown;
         sheet.passesOpen = false;
-        sheet.transitsOpen = false;
+        sheet.outagesOpen = false;
         sheet.shadow = null;
         sheet.bodyTimes = null;
         if (shown) buildSheet(shown);
@@ -89,11 +88,16 @@ function buildSheet(sat) {
     follow.addEventListener('click', () => setFollowing(!following));
     const passes = el('button', 'passes-button', 'Passes');
     passes.addEventListener('click', () => togglePasses(sat));
-    const transits = el('button', 'transits-button', 'Transits');
-    transits.addEventListener('click', () => toggleTransits(sat));
     const align = el('button', '', 'Align dish');
     align.addEventListener('click', () => openDish(sat));
-    buttons.append(follow, passes, transits, align);
+    buttons.append(follow, passes);
+    // Sun outages only happen to satellites that stay put in the sky.
+    if (isGeostationary(sat.satrec)) {
+        const outages = el('button', 'outages-button', 'Sun outages');
+        outages.addEventListener('click', () => toggleOutages(sat));
+        buttons.append(outages);
+    }
+    buttons.append(align);
 
     const approach = el('button', 'sheet-line sheet-approach');
     approach.addEventListener('click', () => {
@@ -102,7 +106,7 @@ function buildSheet(sat) {
     });
     node.append(header, group, details, el('div', 'sheet-line sheet-orbit', describeOrbit(sat.satrec)),
         el('div', 'sheet-line sheet-live'), el('div', 'sheet-line sheet-shadow'), el('div', 'sheet-line sheet-pointing'),
-        el('div', 'sheet-line sheet-next'), approach, buttons, el('div', 'sheet-passes'), el('div', 'sheet-transits'));
+        el('div', 'sheet-line sheet-next'), approach, buttons, el('div', 'sheet-passes'), el('div', 'sheet-outages'));
     document.body.appendChild(node);
     sheet.node = node;
     refreshStar();
@@ -402,95 +406,131 @@ function togglePasses(sat) {
     }, 30);
 }
 
-function toggleTransits(sat) {
-    const list = sheet.node.querySelector('.sheet-transits');
-    sheet.transitsOpen = !sheet.transitsOpen;
-    sheet.node.querySelector('.transits-button').classList.toggle('on', sheet.transitsOpen);
-    list.replaceChildren();
-    if (!sheet.transitsOpen) {
-        transitShown = null;
-        orbitLayer.dirty = true;
-        map.triggerRepaint();
-        return;
-    }
+// ---- Sun outages (geostationary satellites; passes.js) ----
+
+/** The dish the outage windows are for; kept while the app runs. */
+const outageDish = { diameterM: 0.6, band: 'Ku' };
+/** Days searched per chunk, so the app stays responsive and shows progress. */
+const OUTAGE_CHUNK_DAYS = 30;
+
+function toggleOutages(sat) {
+    sheet.outagesOpen = !sheet.outagesOpen;
+    sheet.node.querySelector('.outages-button').classList.toggle('on', sheet.outagesOpen);
+    sheet.node.querySelector('.sheet-outages').replaceChildren();
+    if (sheet.outagesOpen) findOutages(sat);
+}
+
+/** Searches the year ahead a chunk at a time, then lists the outage days. */
+function findOutages(sat) {
+    const list = sheet.node.querySelector('.sheet-outages');
+    const run = sheet.outageRun = (sheet.outageRun ?? 0) + 1;
     if (!here) {
-        list.append(el('div', 'sheet-line', 'Transits need your location.'));
+        list.replaceChildren(el('div', 'sheet-line', 'Sun outages need your location.'));
         return;
     }
-    // A day at a time, so the app stays responsive and the user sees it getting on.
     const [lon, lat] = here;
     const from = simNow();
+    const angle = outageAngle(outageDish.diameterM, outageDish.band);
+    const status = el('div', 'sheet-line', `Looking for when the Sun passes behind ${sat.name} from here…`);
+    list.replaceChildren(outageDishPicker(sat), status);
+    let search, chunk = 0;
     const found = [];
-    const status = el('div', 'sheet-line');
-    list.append(status);
-    let day = 0;
     const next = () => {
-        if (sheet.sat !== sat || !sheet.transitsOpen) return;
-        if (day === TRANSIT_DAYS) {
-            list.replaceChildren(...transitRows(sat, found));
-            return;
-        }
-        status.textContent = `Looking for when ${sat.name} passes in front of the Sun or Moon from here… day ${day + 1} of ${TRANSIT_DAYS}` +
-            (found.length ? ` (${found.length} found)` : '');
+        if (sheet.sat !== sat || !sheet.outagesOpen || run !== sheet.outageRun) return;
         try {
-            found.push(...findTransits(sat, lat, lon, from + day * 86_400_000, from + (day + 1) * 86_400_000));
+            if (!search) {
+                search = prepareSunOutages(sat, lat, lon, from);
+                if (search.neverUp) {
+                    list.replaceChildren(el('div', 'sheet-line', `${sat.name} is always below your horizon, so it has no sun outages here.`));
+                    return;
+                }
+            }
+            const start = from + chunk * OUTAGE_CHUNK_DAYS * 86_400_000;
+            if (start >= from + OUTAGE_DAYS * 86_400_000) {
+                list.replaceChildren(outageDishPicker(sat), ...outageRows(sat, found, angle));
+                return;
+            }
+            const end = Math.min(start + OUTAGE_CHUNK_DAYS * 86_400_000, from + OUTAGE_DAYS * 86_400_000);
+            found.push(...search.search(start, end, angle));
         } catch (e) {
-            console.error('Finding transits failed', e);
-            list.replaceChildren(el('div', 'sheet-line', "Couldn't work out transits for this satellite."));
+            console.error('Finding sun outages failed', e);
+            list.replaceChildren(el('div', 'sheet-line', "Couldn't work out sun outages for this satellite."));
             return;
         }
-        day++;
+        chunk++;
+        status.textContent = `Looking for when the Sun passes behind ${sat.name} from here… ` +
+            `${Math.min(chunk * OUTAGE_CHUNK_DAYS, OUTAGE_DAYS)} of ${OUTAGE_DAYS} days` + (found.length ? ` (${found.length} found)` : '');
         setTimeout(next, 0);
     };
     // Let the message paint first.
     setTimeout(next, 30);
 }
 
-function transitRows(sat, transits) {
-    if (!transits.length) {
-        return [el('div', 'sheet-line',
-            `From here, ${sat.name} doesn't pass in front of the Sun or Moon, or within ${NEAR_MISS_DEGREES}° of them, in the next ${TRANSIT_DAYS} days. ` +
-            'From one spot that is rare: a few times a year for the ISS.')];
+/** Dish size and band, which set how wide the outage is; changing either searches again. */
+function outageDishPicker(sat) {
+    const node = el('div', 'outage-dish');
+    const sizes = el('div', 'segmented');
+    for (const diameterM of DISH_SIZES_M) {
+        const button = el('button', diameterM === outageDish.diameterM ? 'on' : '', diameterM < 1 ? `${diameterM * 100} cm` : `${diameterM} m`);
+        button.addEventListener('click', () => {
+            outageDish.diameterM = diameterM;
+            findOutages(sat);
+        });
+        sizes.append(button);
     }
-    const day = t => new Date(t).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
-    const time = t => new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    return [
-        el('div', 'sheet-line sheet-hint',
-            `From your location, the next ${TRANSIT_DAYS} days. ✓ passes in front of the disc; the rest come within ${NEAR_MISS_DEGREES}°. ` +
-            'Tap one to see the strip of ground it is seen from. Times far ahead can shift by seconds: check again nearer the day. ' +
-            'Never look at the Sun without a proper solar filter.'),
-        ...transits.map(transit => {
-            const name = transit.kind === 'sun' ? 'Sun' : 'Moon';
-            const icon = transit.kind === 'sun' ? '☀' : '☾';
-            const row = el('button', 'pass transit' + (transit.visibleHere ? ' visible' : ''));
-            const where = transit.visibleHere
-                ? `✓ In front of the ${name} for ${transit.durationS.toFixed(2)} s, ${Math.round(transit.separation / transit.radius * 100)}% of the way out from its middle` +
-                  (transit.centreKm >= 1 ? ` (longest ${Math.round(transit.centreKm)} km ${compass(transit.centreBearing)} of you)` : '')
-                : `Misses the ${name} by ${(transit.separation - transit.radius).toFixed(2)}° ` +
-                  `(it crosses ${Math.round(transit.centreKm)} km ${compass(transit.centreBearing)} of you)`;
-            row.append(
-                el('span', 'pass-when', `${icon} ${transit.visibleHere ? `${name} transit` : 'Near miss'} · ${day(transit.t)} ${time(transit.t)}`),
-                el('span', 'pass-seen', where),
-                el('span', 'pass-what',
-                    `${sat.name} ${Math.round(transit.el)}° up in the ${compass(transit.az)}, ${Math.round(transit.rangeKm).toLocaleString()} km away · ` +
-                    `${transit.kind === 'sun' ? 'Sun' : 'Moon'} ${Math.round(transit.sourceElevation)}° up`),
-            );
-            row.addEventListener('click', () => showTransit(transit));
-            return row;
-        }),
-    ];
+    const bands = el('div', 'segmented');
+    for (const band of Object.keys(BAND_WAVELENGTHS_M)) {
+        const button = el('button', band === outageDish.band ? 'on' : '', `${band} band`);
+        button.addEventListener('click', () => {
+            outageDish.band = band;
+            findOutages(sat);
+        });
+        bands.append(button);
+    }
+    node.append(sizes, bands);
+    return node;
 }
 
-/** Goes to a transit: the clock to its moment, its track drawn, and the camera over it. */
-function showTransit(transit) {
-    transitShown = transit.path;
-    orbitLayer.dirty = true;
-    setTimeOffset(transit.t - Date.now());
-    showTimeBar();
-    const [lat, lon] = transit.centre;
-    // Close enough to see the track against towns and roads (zoom 6 as it looks; see visualZoom).
-    const zoom = TRANSIT_VIEW_ZOOM + Math.log2(Math.max(Math.cos(lat * Math.PI / 180), 0.01));
-    map.flyTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), zoom), duration: 2000 });
+function outageRows(sat, days, angle) {
+    const dish = `${outageDish.diameterM < 1 ? `${outageDish.diameterM * 100} cm` : `${outageDish.diameterM} m`} ${outageDish.band}-band dish`;
+    const hint = el('div', 'sheet-line sheet-hint',
+        `When the Sun passes behind ${sat.name} as seen from here, in the next ${OUTAGE_DAYS} days. A dish aimed at it then also ` +
+        `points at the Sun, whose noise drowns the signal: an outage, for a ${dish} while the Sun is within ${angle.toFixed(1)}° ` +
+        `(its beam is ${dishBeamwidth(outageDish.diameterM, outageDish.band).toFixed(1)}° wide). Assumes the satellite stays in its slot. ` +
+        'Tap a day to see it in sky view. Never look at the Sun without a proper solar filter.');
+    if (!days.length) {
+        return [el('div', 'sheet-line', `The Sun doesn't pass within ${angle.toFixed(1)}° of ${sat.name} from here in the next ${OUTAGE_DAYS} days.`), hint];
+    }
+    const day = t => new Date(t).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    const time = (t, seconds) => new Date(t).toLocaleTimeString(undefined, seconds
+        ? { hour: '2-digit', minute: '2-digit', second: '2-digit' } : { hour: '2-digit', minute: '2-digit' });
+    const span = ([start, end], seconds) => `${time(start, seconds)}–${time(end, seconds)} (${describeDuration(end - start)})`;
+    // A season is a run of days in a row: "Outages 3–8 Mar".
+    const seasons = [];
+    for (const d of days) {
+        const last = seasons[seasons.length - 1];
+        if (last && d.t - last[last.length - 1].t < 3 * 86_400_000) last.push(d); else seasons.push([d]);
+    }
+    const rows = [hint];
+    for (const season of seasons) {
+        const first = new Date(season[0].t), last = new Date(season[season.length - 1].t);
+        const short = d => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+        rows.push(el('div', 'search-heading', `Outages ${short(first)}${season.length > 1 ? ` – ${short(last)}` : ''} (${season.length} day${season.length > 1 ? 's' : ''})`));
+        for (const d of season) {
+            const row = el('button', 'pass transit' + (d.behind ? ' visible' : ''));
+            row.append(
+                el('span', 'pass-when', `${day(d.t)} · closest ${time(d.t, true)}, ${d.separation.toFixed(2)}° off`),
+                el('span', 'pass-seen', d.behind ? `☀ Sun behind it ${span(d.behind, true)}` : `Sun's edge passes ${(d.separation - SUN_RADIUS_DEGREES).toFixed(2)}° off it`),
+                el('span', 'pass-what', `Outage for your dish ${span(d.outage, false)} · Sun ${Math.round(d.sunElevation)}° up`),
+            );
+            row.addEventListener('click', () => {
+                setTimeOffset(d.t - Date.now());
+                showTimeBar();
+            });
+            rows.push(row);
+        }
+    }
+    return rows;
 }
 
 function passRows(passes) {
@@ -732,7 +772,7 @@ function back() {
     else if (events.node) closeEvents();
     else if (sky.open) closeSkyView();
     else if (timeBar.node) closeTimeBar();
-    else if (sheet.transitsOpen) toggleTransits(sheet.sat);
+    else if (sheet.outagesOpen) toggleOutages(sheet.sat);
     else if (sheet.passesOpen) togglePasses(sheet.sat);
     else if (selected) select(null);
     else if (selectedBody) selectBody(null);

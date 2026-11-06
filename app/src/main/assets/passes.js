@@ -2,7 +2,8 @@
 
 // Pass predictions: when a satellite rises over the user's horizon, how high it climbs, where it
 // sets, and whether it can be seen by eye (lit by the Sun while the user's sky is dark). Also when it
-// goes into and out of Earth's shadow, and when it crosses the face of the Sun or Moon (transits).
+// goes into and out of Earth's shadow, and for geostationary satellites, when the Sun passes behind
+// them (sun outages).
 //
 // Visible ISS passes and starred satellites' passes also go to MainActivity (Android.setPassAlerts)
 // for pass notifications.
@@ -199,28 +200,41 @@ function shadowChanges(sat, from) {
     return { shadowed: start, changes, searchedTo: end };
 }
 
-// ---- Sun and Moon transits ----
+// ---- Sun outages (geostationary satellites) ----
 //
-// From the user's location: when the satellite passes in front of the Sun (or Moon), so the Sun is
-// right behind it, and near misses. That happens when the user is on the line from the Sun through
-// the satellite. Where that line meets the ground races along a narrow track, a few km wide: seen
-// from its centre line the satellite crosses the middle of the disc; off it, nearer an edge, until
-// it misses. So the search looks for the track coming close to the user, then checks the view from
-// the user's own spot.
+// A geostationary satellite stays put in the user's sky, and on a few days around each equinox the
+// Sun passes behind it. A dish aimed at the satellite is then aimed at the Sun too, whose noise
+// drowns the signal for some minutes each day: a sun outage. How long depends on the dish's beam:
+// the bigger the dish and the higher the frequency, the narrower the beam and the shorter the outage.
+//
+// Propagating a geostationary satellite's elements a year ahead drifts badly (they leave out the
+// operator's station-keeping), so the satellite is taken to stay in its slot: its path across the
+// sky over one sidereal day from now, repeated. Station-kept, that is a point; an old inclined
+// satellite traces a small figure 8 each day.
 
-/** How far ahead transits are searched for: from one spot they are rare, a few a year for the ISS. */
-const TRANSIT_DAYS = 30;
-/** Near misses this close (degrees from the disc's edge) are listed too. */
-const NEAR_MISS_DEGREES = 2;
-/** How close the track must come to the user to be looked at: wider than any near miss's. */
-const TRANSIT_SEARCH_KM = 150;
-const TRANSIT_STEP_MS = 10_000;
-/** Below this the Sun or Moon is too low, dim and blurred to watch a transit against. */
-const TRANSIT_MIN_ELEVATION = 5;
-/** Seconds either side of the transit for which its track is drawn. */
-const TRANSIT_PATH_S = 25;
+const OUTAGE_DAYS = 365;
+const OUTAGE_STEP_MS = 10 * 60_000;
+const SIDEREAL_DAY_MS = 86_164_091;
 const SUN_RADIUS_DEGREES = 0.2666;
 const MOON_RADIUS_KM = 1737.4;
+/** Dish diameters offered (m), and the bands' wavelengths (m): Ku about 11.7 GHz, C about 4 GHz. */
+const DISH_SIZES_M = [0.6, 0.9, 1.2, 2.4];
+const BAND_WAVELENGTHS_M = { Ku: 0.0256, C: 0.075 };
+
+/** Geostationary or geosynchronous: once round a sidereal day, near circular. */
+function isGeostationary(satrec) {
+    return Math.abs(2 * Math.PI / satrec.no - 1436.1) < 30 && satrec.ecco < 0.1;
+}
+
+/** A dish's half-power beamwidth in degrees: about 70 wavelengths over its diameter. */
+function dishBeamwidth(diameterM, band) {
+    return 70 * BAND_WAVELENGTHS_M[band] / diameterM;
+}
+
+/** How far off the satellite the Sun's middle can be and still cause an outage (degrees). */
+function outageAngle(diameterM, band) {
+    return dishBeamwidth(diameterM, band) / 2 + SUN_RADIUS_DEGREES;
+}
 
 function unit(v) {
     const length = Math.hypot(...v);
@@ -240,44 +254,10 @@ function transitSource(kind, date) {
     return kind === 'sun' ? { dir: sunDirection(date) } : { pos: moonAt(date).globe };
 }
 
-/** Unit vector from globe-space point p towards the source. */
-function towardsSource(source, p) {
-    return source.dir ?? unit(source.pos.map((c, i) => c - p[i]));
-}
-
 /** The source's angular radius in radians, seen from globe-space point p. */
 function sourceRadius(source, p) {
     if (source.dir) return SUN_RADIUS_DEGREES * Math.PI / 180;
     return Math.asin(MOON_RADIUS_KM / (Math.hypot(...source.pos.map((c, i) => c - p[i])) * EARTH_RADIUS_KM));
-}
-
-/** Where the line from the source through the satellite at s meets the ground, or null if it misses. */
-function transitPoint(s, source) {
-    const d = towardsSource(source, s).map(c => -c);
-    const b = dot(s, d), c = dot(s, s) - 1;
-    const disc = b * b - c;
-    if (disc < 0) return null;
-    const along = -b - Math.sqrt(disc);
-    return along > 0 ? s.map((x, i) => x + along * d[i]) : null;
-}
-
-/** Great-circle distance in km between two points on (or above) the unit sphere. */
-function groundKm(a, b) {
-    return Math.acos(Math.max(-1, Math.min(1, dot(unit(a), unit(b))))) * EARTH_RADIUS_KM;
-}
-
-function globeLatLon(p) {
-    const r = Math.hypot(...p);
-    return [Math.asin(p[1] / r) * 180 / Math.PI, Math.atan2(p[0], p[2]) * 180 / Math.PI];
-}
-
-/** Initial bearing in degrees from globe point a to b. */
-function bearing(a, b) {
-    const [lat1, lon1] = globeLatLon(a), [lat2, lon2] = globeLatLon(b);
-    const p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180;
-    const y = Math.sin(dl) * Math.cos(p2);
-    const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
-    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
 /** Angle in degrees between two directions. */
@@ -286,144 +266,76 @@ function angleBetween(a, b) {
 }
 
 /**
- * Seen from (lat, lon) between `from` and `end` (ms): the times `sat` passes in front of the Sun or
- * Moon, or misses it by under NEAR_MISS_DEGREES, soonest first (see describeTransit).
+ * Prepares a sun outage search for a geostationary satellite seen from (lat, lon), with its path
+ * across the sky taken from `from` (ms). Returns { neverUp } when it is always below the horizon,
+ * else { search(start, end, angle) } giving the days between start and end (ms) when the Sun's
+ * middle comes within `angle` degrees of it: [{ t (closest), separation (degrees), sunElevation,
+ * behind: [start, end] or null (the Sun's disc behind the satellite), outage: [start, end] }].
  */
-function findTransits(sat, lat, lon, from, end) {
-    const observer = toGlobe(lat, lon, 0);
-    // High orbits' tracks move slowly enough for a coarser step.
-    const periodMs = 2 * Math.PI / sat.satrec.no * 60_000;
-    const step = periodMs < 3 * 3_600_000 ? TRANSIT_STEP_MS : 6 * TRANSIT_STEP_MS;
-    const minElevation = TRANSIT_MIN_ELEVATION * Math.PI / 180;
-    const found = [];
-    for (const kind of ['sun', 'moon']) {
-        /** How far from the user the centre line is at time t, or null when there is none. */
-        const offset = t => {
-            const date = new Date(t);
-            const s = satelliteGlobe(sat.satrec, date);
-            const p = s && transitPoint(s, transitSource(kind, date));
-            return p ? groundKm(p, observer) : null;
-        };
-        // The last three samples, for spotting the centre line at its closest to the user.
-        let recent = [];
-        for (let t = from; t <= end;) {
-            const date = new Date(t);
-            const pv = propagate(sat.satrec, date);
-            if (!pv) {
-                recent = [];
-                t += step;
-                continue;
-            }
-            // A track is only ever within sight of the satellite (it stands over its own track at
-            // TRANSIT_MIN_ELEVATION or more), so while the satellite is far from the user, skip ahead
-            // by the least time it could take to come within reach: most of each orbit.
-            const { x, y, z } = pv.position;
-            const r = Math.hypot(x, y, z);
-            const gmst = satellite.gstime(date);
-            const below = [-x * Math.sin(gmst) + y * Math.cos(gmst), z, x * Math.cos(gmst) + y * Math.sin(gmst)];
-            const away = groundKm(below, observer);
-            const reachKm = (Math.acos(Math.min(1, EARTH_RADIUS_KM * Math.cos(minElevation) / r)) - minElevation) * EARTH_RADIUS_KM +
-                TRANSIT_SEARCH_KM + 100;
-            if (away > reachKm) {
-                // Its ground track moves no faster than its speed scaled down to the ground, plus the Earth's turning.
-                const v = pv.velocity;
-                const groundSpeed = Math.hypot(v.x, v.y, v.z) * EARTH_RADIUS_KM / r + 0.5;
-                t += Math.max(step, (away - reachKm) / groundSpeed * 1000);
-                recent = [];
-                continue;
-            }
-            recent.push([t, offset(t)]);
-            if (recent.length > 3) recent.shift();
-            const [[t0, d0] = [], [, d1] = [], [t2, d2] = []] = recent;
-            // The centre line at its closest to the user (it sweeps by at several km/s, so a coarse
-            // step can land well off it): narrow it down.
-            if (recent.length === 3 && d0 !== null && d1 !== null && d2 !== null && d1 <= d0 && d1 <= d2 && d1 < TRANSIT_SEARCH_KM + 1000) {
+function prepareSunOutages(sat, lat, lon, from) {
+    // The satellite's direction over one sidereal day, a minute apart.
+    const path = [];
+    for (let m = 0; m <= Math.ceil(SIDEREAL_DAY_MS / 60_000); m++) {
+        const s = satelliteGlobe(sat.satrec, new Date(from + m * 60_000));
+        path.push(s ? skyDirection(s, lat, lon) : null);
+    }
+    if (!path.some(d => d && d[2] > 0)) return { neverUp: true };
+    const satDir = t => {
+        const minutes = (((t - from) % SIDEREAL_DAY_MS) + SIDEREAL_DAY_MS) % SIDEREAL_DAY_MS / 60_000;
+        const i = Math.floor(minutes), f = minutes - i;
+        const a = path[i], b = path[i + 1] ?? a;
+        if (!a || !b) return a ?? b;
+        return unit(a.map((c, k) => c + (b[k] - c) * f));
+    };
+    const sunDir = t => skyDirection(sunDirection(new Date(t)).map(c => c * 1e6), lat, lon);
+    const separation = t => {
+        const s = satDir(t);
+        return s ? angleBetween(s, sunDir(t)) : 180;
+    };
+    /** When the separation crosses `level`, going from t (inside) in direction `way` (+1 or -1). */
+    const edge = (t, level, way) => {
+        let inside = t, outside = t;
+        for (let i = 0; i < 240; i++) {
+            outside += way * 30_000;
+            if (separation(outside) > level) break;
+            inside = outside;
+        }
+        while (Math.abs(outside - inside) > 500) {
+            const mid = (inside + outside) / 2;
+            if (separation(mid) > level) outside = mid; else inside = mid;
+        }
+        return (inside + outside) / 2;
+    };
+
+    function search(start, end, angle) {
+        const days = [];
+        // The Sun crosses the sky at about 0.25° a minute: a coarse step can land up to 1.25° off its closest.
+        let t0 = start, s0 = separation(t0), t1 = start + OUTAGE_STEP_MS, s1 = separation(t1);
+        for (let t2 = t1 + OUTAGE_STEP_MS; t2 <= end; t2 += OUTAGE_STEP_MS) {
+            const s2 = separation(t2);
+            if (s1 <= s0 && s1 <= s2 && s1 < angle + 2) {
                 let a = t0, b = t2;
                 const g = (Math.sqrt(5) - 1) / 2;
-                for (let i = 0; i < 40 && b - a > 20; i++) {
+                for (let i = 0; i < 40 && b - a > 200; i++) {
                     const c = b - g * (b - a), d = a + g * (b - a);
-                    if ((offset(c) ?? Infinity) < (offset(d) ?? Infinity)) b = d; else a = c;
+                    if (separation(c) < separation(d)) b = d; else a = c;
                 }
-                const transit = describeTransit(sat, kind, (a + b) / 2, observer);
-                if (transit && transit.separation - transit.radius < NEAR_MISS_DEGREES) found.push(transit);
+                const t = (a + b) / 2;
+                const closest = separation(t);
+                const sunElevation = azEl(sunDir(t))[1];
+                if (closest < angle && sunElevation > 0) {
+                    days.push({
+                        t, separation: closest, sunElevation,
+                        behind: closest < SUN_RADIUS_DEGREES ? [edge(t, SUN_RADIUS_DEGREES, -1), edge(t, SUN_RADIUS_DEGREES, 1)] : null,
+                        outage: [edge(t, angle, -1), edge(t, angle, 1)],
+                    });
+                }
             }
-            t += step;
+            t0 = t1; s0 = s1; t1 = t2; s1 = s2;
         }
+        return days;
     }
-    return found.sort((a, b) => a.t - b.t);
-}
-
-/**
- * A transit whose centre line is closest to the observer at t: { kind, t (closest to the disc's middle
- * from here), centreKm and centreBearing (the centre line from here), halfWidthKm (how far either side
- * of it the disc is crossed at all), visibleHere, separation and radius (degrees), durationS, az, el,
- * rangeKm, sourceElevation, centre ([lat, lon]), path (transitPath) }; null if the Sun or Moon is too low.
- */
-function describeTransit(sat, kind, t, observer) {
-    const date = new Date(t);
-    const source = transitSource(kind, date);
-    const s = satelliteGlobe(sat.satrec, date);
-    const centre = s && transitPoint(s, source);
-    if (!centre) return null;
-    const toSource = towardsSource(source, observer);
-    const sourceElevation = Math.asin(dot(unit(observer), toSource)) * 180 / Math.PI;
-    if (sourceElevation < TRANSIT_MIN_ELEVATION) return null;
-    const radius = sourceRadius(source, observer) * 180 / Math.PI;
-    // From here, when the satellite is closest to the disc's middle, and how close.
-    let separation = Infinity, closest = t;
-    for (let dt = -6000; dt <= 6000; dt += 25) {
-        const at = new Date(t + dt);
-        const s2 = satelliteGlobe(sat.satrec, at);
-        if (!s2) continue;
-        const gap = angleBetween(s2.map((c, i) => c - observer[i]), towardsSource(transitSource(kind, at), observer));
-        if (gap < separation) { separation = gap; closest = t + dt; }
-    }
-    const atClosest = satelliteGlobe(sat.satrec, new Date(closest)) ?? s;
-    const rangeKm = Math.hypot(...atClosest.map((c, i) => c - observer[i])) * EARTH_RADIUS_KM;
-    // How fast it crosses the sky, for how long it is in front of the disc.
-    const before = satelliteGlobe(sat.satrec, new Date(closest - 500)), after = satelliteGlobe(sat.satrec, new Date(closest + 500));
-    const rate = before && after ? angleBetween(before.map((c, i) => c - observer[i]), after.map((c, i) => c - observer[i])) : 0;
-    const durationS = separation < radius && rate > 0 ? 2 * Math.sqrt(radius * radius - separation * separation) / rate : 0;
-    // Across the track: the disc's radius at the satellite's distance, spread out on the ground by the
-    // Sun's or Moon's low angle.
-    const halfWidthKm = rangeKm * Math.tan(radius * Math.PI / 180) / Math.sin(sourceElevation * Math.PI / 180);
-    const [lat, lon] = globeLatLon(observer);
-    const [az, el] = azEl(skyDirection(atClosest, lat, lon));
-    return {
-        kind, t: closest,
-        centreKm: groundKm(centre, observer),
-        centreBearing: bearing(observer, centre),
-        halfWidthKm,
-        visibleHere: separation < radius,
-        separation, radius, durationS, az, el, rangeKm, sourceElevation,
-        centre: globeLatLon(centre),
-        path: transitPath(sat, kind, t),
-    };
-}
-
-/**
- * The transit's track on the ground around t, for drawing: { centre, left, right } lists of globe
- * points: the centre line, and the edges of the band from which the disc is crossed at all.
- */
-function transitPath(sat, kind, t) {
-    const centre = [], left = [], right = [];
-    for (let dt = -TRANSIT_PATH_S * 1000; dt <= TRANSIT_PATH_S * 1000; dt += 200) {
-        const date = new Date(t + dt);
-        const source = transitSource(kind, date);
-        const s = satelliteGlobe(sat.satrec, date);
-        const p = s && transitPoint(s, source);
-        if (!p) continue;
-        const elevation = Math.asin(dot(unit(p), towardsSource(source, p)));
-        if (elevation <= 0) continue;
-        const previous = centre[centre.length - 1];
-        centre.push(p);
-        if (!previous) continue;
-        const across = unit(cross(unit(p), p.map((c, i) => c - previous[i])));
-        const half = Math.hypot(...s.map((c, i) => c - p[i])) * Math.tan(sourceRadius(source, p)) / Math.sin(elevation);
-        left.push(unit(p.map((c, i) => c + across[i] * half)));
-        right.push(unit(p.map((c, i) => c - across[i] * half)));
-    }
-    return { centre, left, right };
+    return { search };
 }
 
 // ---- Pass alerts ----
