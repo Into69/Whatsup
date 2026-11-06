@@ -86,4 +86,6 @@
     <string name="downloads_failed">%1$d of %2$d failed: using saved copies</string>
     <string name="downloads_next">Next: %1$s</string>
     <string name="downloads_next_more">Next: %1$s, and %2$d more</string>
+    <string name="hide_buttons">Hide buttons</string>
+    <string name="show_buttons">Show buttons</string>
 </resources>

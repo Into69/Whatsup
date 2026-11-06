@@ -154,6 +154,12 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) { downloadTracker.downloads.collect(::showDownloads) }
         }
+        val toggle = findViewById<View>(R.id.buttons_toggle)
+        showButtons(toggle, !settings.buttonsHidden)
+        toggle.setOnClickListener {
+            settings.buttonsHidden = !settings.buttonsHidden
+            showButtons(toggle, !settings.buttonsHidden)
+        }
         findViewById<View>(R.id.settings_button).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
@@ -276,6 +282,13 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     override fun onDestroy() {
         webView.destroy()
         super.onDestroy()
+    }
+
+    /** Folds the column of map buttons away under its toggle, or out again; the chevron points the way it will go. */
+    private fun showButtons(toggle: View, shown: Boolean) {
+        findViewById<View>(R.id.map_buttons).visibility = if (shown) View.VISIBLE else View.GONE
+        toggle.rotation = if (shown) 180f else 0f
+        toggle.contentDescription = getString(if (shown) R.string.hide_buttons else R.string.show_buttons)
     }
 
     private fun pushTileSet() {

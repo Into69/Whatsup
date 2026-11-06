@@ -16,8 +16,9 @@
         android:layout_height="match_parent">
 
         <!--
-            A column at the top right, leaving the bottom to the page's info sheet and legend. It
-            scrolls when a landscape screen is too short for all of it.
+            A column at the top right, leaving the bottom to the page's info sheet and legend: a
+            toggle that folds the buttons away under it, then the buttons. It scrolls when a
+            landscape screen is too short for all of it.
         -->
         <ScrollView
             android:layout_width="wrap_content"
@@ -29,45 +30,61 @@
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:animateLayoutChanges="true"
                 android:orientation="vertical"
                 android:paddingBottom="6dp">
 
                 <ImageButton
-                    android:id="@+id/settings_button"
+                    android:id="@+id/buttons_toggle"
                     style="@style/MapButton"
-                    android:layout_marginBottom="10dp"
-                    android:contentDescription="@string/settings"
-                    android:src="@drawable/ic_settings" />
+                    android:layout_height="28dp"
+                    android:layout_marginBottom="6dp"
+                    android:contentDescription="@string/hide_buttons"
+                    android:padding="2dp"
+                    android:src="@drawable/ic_expand" />
 
-                <ImageButton
-                    android:id="@+id/search_button"
-                    style="@style/MapButton.Stacked"
-                    android:contentDescription="@string/search"
-                    android:src="@drawable/ic_search" />
+                <LinearLayout
+                    android:id="@+id/map_buttons"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
 
-                <ImageButton
-                    android:id="@+id/sky_button"
-                    style="@style/MapButton.Stacked"
-                    android:contentDescription="@string/sky_view"
-                    android:src="@drawable/ic_sky" />
+                    <ImageButton
+                        android:id="@+id/settings_button"
+                        style="@style/MapButton.Stacked"
+                        android:contentDescription="@string/settings"
+                        android:src="@drawable/ic_settings" />
 
-                <ImageButton
-                    android:id="@+id/time_button"
-                    style="@style/MapButton.Stacked"
-                    android:contentDescription="@string/time_travel"
-                    android:src="@drawable/ic_time" />
+                    <ImageButton
+                        android:id="@+id/search_button"
+                        style="@style/MapButton.Stacked"
+                        android:contentDescription="@string/search"
+                        android:src="@drawable/ic_search" />
 
-                <ImageButton
-                    android:id="@+id/events_button"
-                    style="@style/MapButton.Stacked"
-                    android:contentDescription="@string/events"
-                    android:src="@drawable/ic_event" />
+                    <ImageButton
+                        android:id="@+id/sky_button"
+                        style="@style/MapButton.Stacked"
+                        android:contentDescription="@string/sky_view"
+                        android:src="@drawable/ic_sky" />
 
-                <ImageButton
-                    android:id="@+id/recentre_button"
-                    style="@style/MapButton.Stacked"
-                    android:contentDescription="@string/recentre"
-                    android:src="@drawable/ic_my_location" />
+                    <ImageButton
+                        android:id="@+id/time_button"
+                        style="@style/MapButton.Stacked"
+                        android:contentDescription="@string/time_travel"
+                        android:src="@drawable/ic_time" />
+
+                    <ImageButton
+                        android:id="@+id/events_button"
+                        style="@style/MapButton.Stacked"
+                        android:contentDescription="@string/events"
+                        android:src="@drawable/ic_event" />
+
+                    <ImageButton
+                        android:id="@+id/recentre_button"
+                        style="@style/MapButton.Stacked"
+                        android:contentDescription="@string/recentre"
+                        android:src="@drawable/ic_my_location" />
+                </LinearLayout>
             </LinearLayout>
         </ScrollView>
 

@@ -85,6 +85,11 @@ class Settings(context: Context) {
         get() = prefs.getString(KEY_FAVOURITES, "").orEmpty().split(',').mapNotNull { it.toIntOrNull() }.toSet()
         set(value) = prefs.edit().putString(KEY_FAVOURITES, value.joinToString(",")).apply()
 
+    /** Whether the map's column of buttons is folded away under its toggle. */
+    var buttonsHidden: Boolean
+        get() = prefs.getBoolean(KEY_BUTTONS_HIDDEN, false)
+        set(value) = prefs.edit().putBoolean(KEY_BUTTONS_HIDDEN, value).apply()
+
     /**
      * Degrees added to compass headings, set by calibrating in the dish aligner (on top of the
      * magnetic declination, which is worked out from the location).
@@ -106,5 +111,6 @@ class Settings(context: Context) {
         const val KEY_FAVOURITE_ALERTS = "favouriteAlerts"
         const val KEY_FAVOURITES = "favourites"
         const val KEY_COMPASS_OFFSET = "compassOffset"
+        const val KEY_BUTTONS_HIDDEN = "buttonsHidden"
     }
 }
