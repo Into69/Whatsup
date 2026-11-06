@@ -60,6 +60,21 @@ map.transform.setMinZoom(-4);
 // Bottom left, clear of the Android recentre button in the bottom-right corner.
 map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
 
+// MapLibre opens the credits whenever they change (the first tiles, a new tile set) until the map is
+// dragged. Keep them folded to the ⓘ button unless the user has just tapped it to open them.
+{
+    const credits = map.getContainer().querySelector('.maplibregl-ctrl-attrib');
+    let tappedAt = 0;
+    credits.addEventListener('click', () => { tappedAt = Date.now(); }, true);
+    const fold = () => {
+        if (credits.classList.contains('maplibregl-compact-show') && Date.now() - tappedAt > 500) {
+            credits.classList.remove('maplibregl-compact-show');
+        }
+    };
+    new MutationObserver(fold).observe(credits, { attributes: true, attributeFilter: ['class'] });
+    fold();
+}
+
 const loaded = new Promise(resolve => map.once('load', () => {
     map.addSource('accuracy', { type: 'geojson', data: emptyFeatures() });
     map.addLayer({
