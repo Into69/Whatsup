@@ -612,6 +612,8 @@ function openSearch() {
     row.append(input, close);
     const results = el('div', 'search-results');
     input.addEventListener('input', () => results.replaceChildren(...searchRows(input.value)));
+    // The starred satellites to start with.
+    results.replaceChildren(...searchRows(''));
     searchNode.append(row, results);
     document.body.appendChild(searchNode);
     input.focus();
@@ -624,23 +626,51 @@ function closeSearch() {
     overlaysChanged();
 }
 
+/**
+ * The starred satellites first, narrowed to those matching as the user types; then, from two
+ * characters, the other satellites that match.
+ */
 function searchRows(query) {
     const q = query.trim().toLowerCase();
-    if (q.length < 2) return favouriteRows();
+    /** How well a satellite matches: names starting with the query, then containing it, then numbers; -1 not at all. */
+    const rank = sat => {
+        if (!q) return 0;
+        const name = sat.name.toLowerCase(), official = sat.officialName.toLowerCase();
+        return name.startsWith(q) || official.startsWith(q) ? 0
+            : name.includes(q) || official.includes(q) ? 1
+            : String(sat.id).startsWith(q) || sat.objectId?.toLowerCase().startsWith(q) ? 2
+            : -1;
+    };
+    const byRank = (a, b) => a[0] - b[0] || a[1].name.localeCompare(b[1].name);
+    const rows = [];
+
+    const starred = [...favourites].map(id => satellites.get(id)).filter(Boolean)
+        .map(sat => [rank(sat), sat]).filter(([r]) => r >= 0).sort(byRank);
+    if (starred.length) rows.push(el('div', 'search-heading', '★ Starred'), ...starred.map(([, sat]) => searchRow(sat)));
+    if (!q) {
+        if (!favourites.size) rows.push(el('div', 'search-empty', 'Tip: star a satellite (☆ in its info) to keep it labelled and listed here.'));
+        const hidden = [...favourites].filter(id => !satellites.has(id)).length;
+        if (hidden) rows.push(el('div', 'search-empty', `${hidden} more starred in satellite groups that are turned off.`));
+        return rows;
+    }
+    if (q.length < 2) {
+        rows.push(el('div', 'search-empty', 'Keep typing to search all satellites.'));
+        return rows;
+    }
+
     const matches = [];
     for (const sat of satellites.values()) {
-        const name = sat.name.toLowerCase(), official = sat.officialName.toLowerCase();
-        // Names starting with the query rank first, then names containing it, then numbers.
-        const rank = name.startsWith(q) || official.startsWith(q) ? 0
-            : name.includes(q) || official.includes(q) ? 1
-            : String(sat.id) === q || sat.objectId?.toLowerCase().startsWith(q) ? 2
-            : -1;
-        if (rank >= 0) matches.push([rank, sat]);
+        if (favourites.has(sat.id)) continue;
+        const r = rank(sat);
+        if (r >= 0) matches.push([r, sat]);
     }
-    matches.sort((a, b) => a[0] - b[0] || a[1].name.localeCompare(b[1].name));
-    const rows = matches.slice(0, SEARCH_RESULTS).map(([, sat]) => searchRow(sat));
+    matches.sort(byRank);
+    if (matches.length) {
+        if (starred.length) rows.push(el('div', 'search-heading search-heading-all', 'All satellites'));
+        rows.push(...matches.slice(0, SEARCH_RESULTS).map(([, sat]) => searchRow(sat)));
+        if (matches.length > SEARCH_RESULTS) rows.push(el('div', 'search-empty', `${matches.length - SEARCH_RESULTS} more; keep typing to narrow it down.`));
+    }
     if (!rows.length) rows.push(el('div', 'search-empty', 'No matches among the satellite groups shown. More can be turned on in Settings.'));
-    else if (matches.length > SEARCH_RESULTS) rows.push(el('div', 'search-empty', `${matches.length - SEARCH_RESULTS} more; keep typing to narrow it down.`));
     return rows;
 }
 
@@ -657,18 +687,6 @@ function searchRow(sat) {
         if (!sky.open) flyToSatellite(sat);
     });
     return row;
-}
-
-/** With nothing typed yet: the starred satellites, if any. */
-function favouriteRows() {
-    if (!favourites.size) return [el('div', 'search-empty', 'Tip: star a satellite (☆ in its info) to keep it labelled and listed here.')];
-    const sats = [...favourites].map(id => satellites.get(id)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
-    const hidden = favourites.size - sats.length;
-    return [
-        el('div', 'search-heading', '★ Starred'),
-        ...sats.map(searchRow),
-        ...(hidden ? [el('div', 'search-empty', `${hidden} more starred in satellite groups that are turned off.`)] : []),
-    ];
 }
 
 // ---- Favourites ----

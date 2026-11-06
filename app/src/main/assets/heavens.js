@@ -2,8 +2,8 @@
 
 // The sky beyond the satellites (layers.stars): the stars of stars.js behind the globe, turning with
 // the sidereal clock; the Sun, a glowing disc in its true direction; and the Moon at its true
-// distance and size, lit from the Sun's side, with its dark maria. Each has a label, and a marker on
-// the ground where it is overhead. Tapping the Sun or Moon (here or in sky view) selects it, and
+// distance and size, lit from the Sun's side, with its dark maria. Each has a label, and out of view
+// an arrow at the screen's edge. Tapping the Sun or Moon (here or in sky view) selects it, and
 // panels.js shows its sheet: where it is, rise and set, phases. Sky view draws them too.
 
 /** How far out the stars are drawn from the camera, in Earth radii: in effect at infinity. */
@@ -504,34 +504,10 @@ function placeBodyPointers() {
     }
 }
 
-/** Where on the ground the body is overhead. */
+/** Where on the ground the body is overhead (for its sheet, and for following it). */
 function bodySubpoint(kind) {
     if (kind === 'moon') return { lat: moon.lat, lon: moon.lon };
     return { lat: Math.asin(sun[1]) * 180 / Math.PI, lon: Math.atan2(sun[0], sun[2]) * 180 / Math.PI };
-}
-
-const subpointMarkers = {};
-
-function placeSubpoints() {
-    for (const kind of ['sun', 'moon']) {
-        if (!layers.stars) {
-            subpointMarkers[kind]?.remove();
-            delete subpointMarkers[kind];
-            continue;
-        }
-        const { lat, lon } = bodySubpoint(kind);
-        if (!subpointMarkers[kind]) {
-            const node = document.createElement('div');
-            node.className = `subpoint subpoint-${kind}`;
-            node.addEventListener('click', e => {
-                e.stopPropagation();
-                selectBody(BODIES[kind]);
-            });
-            subpointMarkers[kind] = new maplibregl.Marker({ element: node }).setLngLat([lon, lat]).addTo(map);
-        } else {
-            subpointMarkers[kind].setLngLat([lon, lat]);
-        }
-    }
 }
 
 /** The Sun or Moon drawn at CSS pixel (x, y), if either is. */
@@ -632,10 +608,4 @@ function sunDistanceAu(date) {
 }
 
 // Over everything else: the Moon can pass in front of the Earth and the satellites.
-loaded.then(() => {
-    map.addLayer(bodyLayer);
-    placeSubpoints();
-});
-layerListeners.push(() => loaded.then(placeSubpoints));
-timeListeners.push(() => loaded.then(placeSubpoints));
-setInterval(() => loaded.then(placeSubpoints), 60_000);
+loaded.then(() => map.addLayer(bodyLayer));
