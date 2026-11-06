@@ -85,8 +85,16 @@ function refreshInView() {
         : '';
     inView.title.textContent = `${all.length.toLocaleString()} in line of sight${at}`
         + (layers.favouritesOnly ? ' (starred only)' : '');
-    const rows = shown.slice(0, IN_VIEW_ROWS).map(inViewRow);
-    if (shown.length > IN_VIEW_ROWS) rows.push(el('div', 'search-empty', `${shown.length - IN_VIEW_ROWS} more, lower down; filter to find one.`));
+    // Starred ones first, each part highest first; the cap applies to the rest.
+    const starred = shown.filter(({ sat }) => favourites.has(sat.id));
+    const others = shown.filter(({ sat }) => !favourites.has(sat.id));
+    const rows = [];
+    if (starred.length) {
+        rows.push(el('div', 'search-heading', '★ Starred'), ...starred.map(inViewRow));
+        if (others.length) rows.push(el('div', 'search-heading search-heading-all', 'All in view'));
+    }
+    rows.push(...others.slice(0, IN_VIEW_ROWS).map(inViewRow));
+    if (others.length > IN_VIEW_ROWS) rows.push(el('div', 'search-empty', `${others.length - IN_VIEW_ROWS} more, lower down; filter to find one.`));
     if (!shown.length) {
         rows.push(el('div', 'search-empty', q ? 'None in view match.'
             : 'Nothing above the horizon among the satellites shown. More groups can be turned on in Settings.'));
