@@ -22,9 +22,9 @@
         <item name="android:scaleType">fitCenter</item>
     </style>
 
-    <!-- Below another button in the column: nearly touching, so the column fits a landscape screen. -->
+    <!-- Below another button in the column: close together, so the column fits a landscape screen. -->
     <style name="MapButton.Stacked">
         <item name="android:layout_marginTop">0dp</item>
-        <item name="android:layout_marginBottom">1dp</item>
+        <item name="android:layout_marginBottom">6dp</item>
     </style>
 </resources>
