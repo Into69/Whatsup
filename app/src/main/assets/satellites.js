@@ -647,7 +647,7 @@ function shapeOf(sat) {
 
 /** How many times its base size satellites are drawn at the current zoom, for those that grow fully. */
 function zoomScale() {
-    return 1 + Math.max(0, map.getZoom() - ZOOM_GROWTH_FROM) * ZOOM_GROWTH;
+    return 1 + Math.max(0, visualZoom() - ZOOM_GROWTH_FROM) * ZOOM_GROWTH;
 }
 
 const orbitLayer = {
@@ -799,12 +799,12 @@ const orbitLayer = {
 
 /** How much of the low-orbit groups shows at the current zoom: 0 hidden, 1 fully shown. */
 function lowOrbitFade() {
-    const t = (map.getZoom() - LOW_ORBIT_HIDDEN_ZOOM) / (LOW_ORBIT_SHOWN_ZOOM - LOW_ORBIT_HIDDEN_ZOOM);
+    const t = (visualZoom() - LOW_ORBIT_HIDDEN_ZOOM) / (LOW_ORBIT_SHOWN_ZOOM - LOW_ORBIT_HIDDEN_ZOOM);
     return Math.max(0, Math.min(1, t));
 }
 
-// Zooming changes the fade between ticks; redraw when it does.
-map.on('zoom', () => {
+// Zooming, or panning towards a pole, changes the fade between ticks; redraw when it does.
+map.on('move', () => {
     if (lowOrbitFade() !== orbitLayer.fade) {
         orbitLayer.dirty = true;
         map.triggerRepaint();

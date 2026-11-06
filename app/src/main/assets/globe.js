@@ -39,6 +39,17 @@ function fitZoom(lat) {
     return Math.log2(GLOBE_FILL * side * Math.PI * cos / 512);
 }
 
+/**
+ * The zoom as it looks: what map.getZoom() would be for a globe this size on screen if it were
+ * centred on the equator. MapLibre lowers the zoom number towards the poles while the globe stays the
+ * same size (see fitZoom), so anything that depends on how big things look (low-orbit groups fading
+ * in, satellites growing) goes by this instead.
+ */
+function visualZoom() {
+    const cos = Math.max(Math.cos(map.getCenter().lat * Math.PI / 180), 0.01);
+    return map.getZoom() - Math.log2(cos);
+}
+
 const map = new maplibregl.Map({
     container: 'map',
     style: {
@@ -142,9 +153,10 @@ function setLocation(lat, lon, accuracyM, centre) {
 
 /** Zoomed far out the full-size dot would dwarf the Earth, so it shrinks to a small, still point. */
 function sizeLocationMarker() {
-    marker?.getElement().classList.toggle('you-small', map.getZoom() < SMALL_MARKER_ZOOM);
+    marker?.getElement().classList.toggle('you-small', visualZoom() < SMALL_MARKER_ZOOM);
 }
-map.on('zoom', sizeLocationMarker);
+// On any move: panning towards a pole changes the zoom number too.
+map.on('move', sizeLocationMarker);
 
 function recentre() {
     if (!here) return;
