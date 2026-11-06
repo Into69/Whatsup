@@ -38,6 +38,8 @@ function openDish(sat) {
     dish.node = buildDish(sat);
     document.body.appendChild(dish.node);
     wantOrientation('dish', true);
+    // Full screen: the map's buttons would only get in the way.
+    window.Android?.setMapButtonsHidden(true);
     overlaysChanged();
     requestAnimationFrame(drawDish);
 }
@@ -48,6 +50,7 @@ function closeDish() {
     dish.node.remove();
     dish.node = null;
     wantOrientation('dish', false);
+    window.Android?.setMapButtonsHidden(false);
     overlaysChanged();
 }
 

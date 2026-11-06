@@ -231,6 +231,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
             override fun onPageFinished(view: WebView, url: String) {
                 pageReady = true
+                // A (re)loaded page has no dish aligner open to have hidden them.
+                findViewById<View>(R.id.map_controls).visibility = View.VISIBLE
                 // A (re)loaded page has none of the satellites yet.
                 pushedElementSets = null
                 pushTileSet()
@@ -516,6 +518,12 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         /** Whether the page has a panel open that the back button should close. */
         @JavascriptInterface
         fun setOverlayOpen(open: Boolean) = runOnUiThread { closePanel.isEnabled = open }
+
+        /** Hides the column of map buttons while a full-screen page panel (the dish aligner) is open. */
+        @JavascriptInterface
+        fun setMapButtonsHidden(hidden: Boolean) = runOnUiThread {
+            findViewById<View>(R.id.map_controls).visibility = if (hidden) View.GONE else View.VISIBLE
+        }
 
         /** Whether the page wants the phone's orientation (sky view or the dish aligner is open). */
         @JavascriptInterface
