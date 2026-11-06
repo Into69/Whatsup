@@ -104,9 +104,9 @@
         .search-sub { margin-left: auto; opacity: .55; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
         .search-empty { padding: 10px 6px; opacity: .65; }
 
-        /* Colour legend (panels.js), above the attribution button. */
+        /* Colour legend (panels.js), in the bottom-right corner; it opens upwards. */
         .legend {
-            position: absolute; left: 10px; bottom: calc(var(--safe-bottom) + 34px); z-index: 2;
+            position: absolute; right: 10px; bottom: var(--safe-bottom); z-index: 2;
             background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px 9px;
             font-size: 12px; max-width: 70%;
         }
