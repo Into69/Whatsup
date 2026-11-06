@@ -133,7 +133,8 @@ function openSkyView() {
     sky.canvas.id = 'sky';
     sky.canvas.addEventListener('click', e => {
         const hit = sky.drawn.find(d => Math.hypot(d.x - e.offsetX, d.y - e.offsetY) < SKY_TAP_RADIUS_PX);
-        if (hit) select(hit.sat);
+        if (hit?.body) selectBody(hit.body);
+        else if (hit) select(hit.sat);
     });
     const close = document.createElement('button');
     close.id = 'sky-close';
@@ -356,6 +357,7 @@ function drawSky() {
         ctx.arc(sunPoint[0], sunPoint[1], 10, 0, 2 * Math.PI);
         ctx.fill();
         ctx.fillText('Sun', sunPoint[0], sunPoint[1] - 16);
+        sky.drawn.push({ body: BODIES.sun, x: sunPoint[0], y: sunPoint[1] });
     }
     if (layers.stars) drawMoon(ctx, project, lat, lon);
 
@@ -381,7 +383,16 @@ function drawSky() {
         sky.drawn.push({ sat: s, x: point[0], y: point[1] });
     }
 
-    if (selected?.now) drawTracking(ctx, width, height, project);
+    const target = trackedTarget(lat, lon);
+    if (target) drawTracking(ctx, width, height, project, target);
+}
+
+/** What sky view is guiding the user to: the selected satellite, Sun or Moon, as { name, dir }. */
+function trackedTarget(lat, lon) {
+    if (selected?.now) return { name: selected.name, dir: skyDirection(toGlobe(selected.now.lat, selected.now.lon, selected.now.altKm), lat, lon) };
+    if (selectedBody?.kind === 'sun') return { name: 'Sun', dir: skyDirection(sun.map(c => c * 1e6), lat, lon) };
+    if (selectedBody?.kind === 'moon') return { name: 'Moon', dir: skyDirection(moon.globe, lat, lon) };
+    return null;
 }
 
 /**
@@ -450,15 +461,15 @@ function drawMoon(ctx, project, lat, lon) {
     ctx.restore();
     ctx.fillStyle = '#fff';
     ctx.fillText(`Moon · ${Math.round(moon.lit * 100)}%`, point[0], point[1] - radius - 6);
+    sky.drawn.push({ body: BODIES.moon, x: point[0], y: point[1] });
 }
 
 /**
- * Keeps the selected satellite findable: a ring round it when it is in view, otherwise an arrow at
- * the screen's edge pointing the way to turn, and a line at the top saying where to look.
+ * Keeps the selected satellite (or Sun or Moon) findable: a ring round it when it is in view,
+ * otherwise an arrow at the screen's edge pointing the way to turn, and a line at the top saying
+ * where to look.
  */
-function drawTracking(ctx, width, height, project) {
-    const [lon, lat] = here;
-    const dir = skyDirection(toGlobe(selected.now.lat, selected.now.lon, selected.now.altKm), lat, lon);
+function drawTracking(ctx, width, height, project, { name, dir }) {
     const [az, el] = azEl(dir);
     const point = project(dir);
     // The status line sits level with the close button, below the status bar.
@@ -505,7 +516,7 @@ function drawTracking(ctx, width, height, project) {
     const where = el < 0
         ? `below the horizon (${Math.round(el)}°), towards ${compass(az)}`
         : `${compass(az)} ${Math.round(az)}°, ${Math.round(el)}° up`;
-    const text = `${selected.name}: ${where}`;
+    const text = `${name}: ${where}`;
     ctx.font = '600 14px system-ui, sans-serif';
     const w = Math.min(ctx.measureText(text).width + 24, width - 120);
     ctx.fillStyle = 'rgba(10, 14, 22, 0.85)';

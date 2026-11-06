@@ -56,7 +56,6 @@ const SELECTED = [1, 1, 1, 1], SELECTED_SIZE = 7;
 /** Coverage footprint rings: where the satellite is on the horizon, and FOOTPRINT_HIGH_ELEVATION up. */
 const FOOTPRINT = [0.31, 0.76, 0.97, 0.75], FOOTPRINT_HIGH = [0.31, 0.76, 0.97, 0.35], FOOTPRINT_SIZE = 2;
 const FOOTPRINT_DOTS = 360, FOOTPRINT_HIGH_ELEVATION = 10;
-const MOON = [0.86, 0.86, 0.82, 1], MOON_SIZE = 9;
 
 /** Groups whose orbital planes are drawn (layers.planes): near-circular constellations. */
 const PLANE_GROUPS = new Set(['starlink', 'oneweb', 'amazon-leo', 'qianfan', 'guowang', 'iridium', 'globalstar', 'orbcomm', 'gnss', 'planet', 'spire']);
@@ -81,6 +80,8 @@ let featured = [];
 let dots = [];
 let dotCursor = 0;
 let selected = null;
+/** The Sun or Moon when selected instead of a satellite (heavens.js's BODIES), else null. */
+let selectedBody = null;
 /** The other satellite of a close approach the user picked (events.js), shown with the selection. */
 let partner = null;
 /** Catalogue numbers of the satellites the user has starred; panels.js keeps it. */
@@ -193,8 +194,10 @@ function tick() {
         planesAt = now;
         planes = orbitalPlanes(now);
     }
-    if (following && selected?.now) {
-        map.easeTo({ center: [selected.now.lon, selected.now.lat], duration: TICK_MS, easing: t => t });
+    // Following the Sun or Moon keeps where it is overhead in the middle.
+    const followed = selected?.now ?? (selectedBody && bodySubpoint(selectedBody.kind));
+    if (following && followed) {
+        map.easeTo({ center: [followed.lon, followed.lat], duration: TICK_MS, easing: t => t });
     }
     orbitLayer.dirty = true;
     map.triggerRepaint();
@@ -307,8 +310,13 @@ function toGlobe(lat, lon, altKm) {
 // ---- Selection ----
 
 map.on('click', e => {
+    const body = bodyAt(e.point.x, e.point.y);
+    if (body) {
+        selectBody(body);
+        return;
+    }
     const hit = satelliteAt(e.point.x, e.point.y);
-    if (hit !== selected) select(hit);
+    if (hit !== selected || selectedBody) select(hit);
 });
 
 /** Selects `sat` (null to clear), stopping any following, and drops a close approach's partner. */
@@ -320,6 +328,7 @@ function select(sat) {
         }
     }
     selected = sat;
+    selectedBody = null;
     partner = null;
     following = false;
     loaded.then(updateGroundTracks);
@@ -329,7 +338,7 @@ function select(sat) {
 
 /** Keeps the camera on the selected satellite until turned off or the user drags the map. */
 function setFollowing(on) {
-    following = on && !!selected;
+    following = on && !!(selected || selectedBody);
     if (following) tick();
     notifySatelliteListeners();
 }
@@ -737,7 +746,6 @@ const orbitLayer = {
                 for (let i = 0; i < xyz.length; i += 3) this.pointAt(xyz[i], xyz[i + 1], xyz[i + 2], color, PLANE_SIZE);
             }
         }
-        if (layers.stars && moon) this.point(moon.lat, moon.lon, moon.altKm, MOON, MOON_SIZE);
         // Featured satellites are drawn by their label's icon.
         const fade = lowOrbitFade();
         this.fade = fade;

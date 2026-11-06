@@ -3,7 +3,8 @@
 // The page's own panels:
 //   - the info sheet for the selected satellite: names, catalogue details, orbit, live position,
 //     pointing, the next pass and close approach, a star to keep it as a favourite, and Follow,
-//     Passes and Align dish buttons
+//     Passes and Align dish buttons; or for the Sun or Moon: where it is, rise and set, twilight,
+//     phase and the next new and full Moon
 //   - search, opened by MainActivity's search button (globe.openSearch); empty, it lists favourites
 //   - the colour legend, with how old the orbital data is
 // and the Android back button, which closes whichever panel (or sky view, the dish aligner, events or
@@ -36,12 +37,14 @@ const sheet = {
 };
 
 function updateSheet() {
-    if (selected !== sheet.sat) {
+    const shown = selected ?? selectedBody;
+    if (shown !== sheet.sat) {
         sheet.node?.remove();
         sheet.node = null;
-        sheet.sat = selected;
+        sheet.sat = shown;
         sheet.passesOpen = false;
-        if (selected) buildSheet(selected);
+        sheet.bodyTimes = null;
+        if (shown) buildSheet(shown);
         overlaysChanged();
     }
     if (!sheet.node) return;
@@ -50,6 +53,10 @@ function updateSheet() {
 }
 
 function buildSheet(sat) {
+    if (sat.kind) {
+        buildBodySheet(sat);
+        return;
+    }
     const style = groupStyles[sat.group];
     const node = el('div', 'sheet');
     const header = el('div', 'sheet-header');
@@ -104,6 +111,10 @@ function refreshStar() {
 
 function refreshSheetLive() {
     const sat = sheet.sat;
+    if (sheet.node && sat?.kind) {
+        refreshBodySheet(sat.kind);
+        return;
+    }
     if (!sheet.node || !sat?.now) return;
     const p = toGlobe(sat.now.lat, sat.now.lon, sat.now.altKm);
     sheet.node.querySelector('.sheet-live').textContent = [
@@ -175,6 +186,140 @@ function describePointing(sat) {
     ].join(' · ');
 }
 setInterval(refreshSheetLive, SHEET_REFRESH_MS);
+
+// ---- The Sun and Moon's sheet ----
+
+function buildBodySheet(body) {
+    const node = el('div', 'sheet');
+    const header = el('div', 'sheet-header');
+    const title = el('div', 'sheet-title');
+    title.append(el('b', '', body.kind === 'sun' ? '☀ Sun' : '☾ Moon'), el('div', 'sheet-sub body-sub'));
+    const close = el('button', 'sheet-close', '×');
+    close.setAttribute('aria-label', 'Close');
+    close.addEventListener('click', () => selectBody(null));
+    header.append(title, close);
+    const buttons = el('div', 'sheet-buttons');
+    const follow = el('button', 'follow', 'Follow');
+    follow.addEventListener('click', () => setFollowing(!following));
+    buttons.append(follow);
+    node.append(header,
+        el('div', 'sheet-line body-where'), el('div', 'sheet-line sheet-pointing'),
+        el('div', 'sheet-line body-now'), el('div', 'sheet-line body-day'), el('div', 'sheet-line sheet-hint body-extra'),
+        buttons);
+    document.body.appendChild(node);
+    sheet.node = node;
+}
+
+function refreshBodySheet(kind) {
+    const node = sheet.node;
+    const text = (selector, value) => { node.querySelector(selector).textContent = value; };
+    const now = simNow();
+    const { lat, lon } = bodySubpoint(kind);
+    const overhead = `Overhead at ${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}`;
+    if (kind === 'sun') {
+        const au = sunDistanceAu(new Date(now));
+        text('.body-sub', 'Our star');
+        text('.body-where', `${overhead} · ${(au * 149.5979).toFixed(1)} million km away (${au.toFixed(4)} AU)`);
+    } else {
+        text('.body-sub', `${moon.phase} · ${Math.round(moon.lit * 100)}% lit · ${moon.age.toFixed(1)} days old`);
+        text('.body-where', `${overhead} · ${Math.round(moon.distanceKm).toLocaleString()} km away (light takes ${(moon.distanceKm / 299792.458).toFixed(2)} s)`);
+    }
+    if (!here) {
+        text('.sheet-pointing', 'Rise and set need your location.');
+        return;
+    }
+    const [az, elevation] = bodyLook(kind, now, here[1], here[0]);
+    text('.sheet-pointing', `From here: Az ${az.toFixed(1)}° ${compass(az)} · El ${elevation.toFixed(1)}°${elevation < HORIZON_ELEVATION ? ' (below the horizon)' : ''}`);
+
+    let times = sheet.bodyTimes;
+    if (!times || times.kind !== kind || now < times.at || now >= times.until) {
+        try {
+            times = sheet.bodyTimes = bodyTimes(kind, now, here[1], here[0]);
+        } catch (e) {
+            console.error('Working out rise and set failed', e);
+            return;
+        }
+    }
+    text('.body-now', times.now(now));
+    text('.body-day', times.day);
+    text('.body-extra', times.extra);
+}
+
+/** How far back the Sun's and Moon's sheet looks for the rise of the day or pass under way. */
+const BODY_LOOK_BACK_HOURS = 22;
+
+/** "4:54 PM", with the day when it isn't the same day as `now`. */
+function clockTime(t, now) {
+    const time = new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    if (new Date(t).toDateString() === new Date(now).toDateString()) return time;
+    return new Date(t).toLocaleDateString(undefined, { weekday: 'short' }) + ' ' + time;
+}
+
+/**
+ * The sheet's rise, set and phase lines for the Sun or Moon from (lat, lon) at `now`, kept until the
+ * next event: { now(t) (a line with countdowns), day, extra, at, until }.
+ */
+function bodyTimes(kind, now, lat, lon) {
+    // From well before now, to find the rise of a day already under way: a winter full Moon can be
+    // up for 18 hours or more.
+    const events = bodyEvents(kind, now - BODY_LOOK_BACK_HOURS * 3_600_000, BODY_LOOK_BACK_HOURS + 30, lat, lon);
+    const after = type => events.find(e => e.type === type && e.t > now);
+    const before = type => events.filter(e => e.type === type && e.t <= now).pop();
+    const up = bodyLook(kind, now, lat, lon)[1] > HORIZON_ELEVATION;
+    const nextRise = after('rise'), nextSet = after('set'), nextPeak = after('peak');
+    const upcoming = events.filter(e => e.t > now).map(e => e.t);
+    const until = Math.min(now + 10 * 60_000, ...upcoming);
+    const at = t => clockTime(t, now);
+
+    let nowLine;
+    if (!nextRise && !nextSet) {
+        const always = up
+            ? (kind === 'sun' ? 'Up all day (midnight Sun)' : 'Up all day')
+            : (kind === 'sun' ? 'Below the horizon all day (polar night)' : 'Below the horizon all day');
+        nowLine = () => always;
+    } else if (up) {
+        nowLine = t => [
+            `Up now`,
+            nextPeak && nextPeak.t < (nextSet?.t ?? Infinity) ? `highest ${Math.round(nextPeak.el)}° in the ${compass(nextPeak.az)} in ${describeDuration(nextPeak.t - t)}` : null,
+            nextSet ? `sets in ${describeDuration(nextSet.t - t)} (${at(nextSet.t)}) in the ${compass(nextSet.az)}` : null,
+        ].filter(Boolean).join(' · ');
+    } else {
+        nowLine = t => `Rises in ${describeDuration(nextRise.t - t)} (${at(nextRise.t)}) in the ${compass(nextRise.az)}`;
+    }
+
+    // The day (the Sun's) or pass (the Moon's) under way, else the next one.
+    const rise = up ? before('rise') : nextRise;
+    const set = events.find(e => e.type === 'set' && e.t > (rise?.t ?? now));
+    const peak = events.find(e => e.type === 'peak' && e.t > (rise?.t ?? now - 12 * 3_600_000) && e.t < (set?.t ?? Infinity));
+    const word = kind === 'sun' ? ['Sunrise', 'Sunset'] : ['Moonrise', 'Moonset'];
+    const day = [
+        rise && `${word[0]} ${at(rise.t)} ${compass(rise.az)}`,
+        peak && `${kind === 'sun' ? 'Noon' : 'Highest'} ${at(peak.t)} at ${Math.round(peak.el)}°`,
+        set && `${word[1]} ${at(set.t)} ${compass(set.az)}`,
+        kind === 'sun' && rise && set && `${describeDuration(set.t - rise.t)} of daylight`,
+    ].filter(Boolean).join(' · ');
+
+    let extra;
+    if (kind === 'sun') {
+        const twilight = bodyEvents('sun', now, 30, lat, lon, CIVIL_TWILIGHT_ELEVATION);
+        const dawn = twilight.find(e => e.type === 'rise'), dusk = twilight.find(e => e.type === 'set');
+        extra = dawn || dusk
+            ? 'Civil twilight: ' + [dawn && `dawn ${at(dawn.t)}`, dusk && `dusk ${at(dusk.t)}`].filter(Boolean).join(' · ') +
+              '. Satellites show best in the dark after dusk and before dawn.'
+            : 'No civil twilight in the next day here.';
+    } else {
+        const phases = [[0, 'New Moon'], [90, 'First quarter'], [180, 'Full Moon'], [270, 'Last quarter']]
+            .map(([elongation, label]) => [nextMoonPhase(elongation, now), label])
+            .filter(([t]) => t)
+            .sort((a, b) => a[0] - b[0])
+            .slice(0, 2);
+        extra = phases.map(([t, label]) => `${label} ${dayTime(t)}`).join(' · ');
+    }
+    return { kind, at: now, until, now: nowLine, day, extra };
+}
+timeListeners.push(() => {
+    sheet.bodyTimes = null;
+});
 
 /** "Low Earth orbit · 415 × 422 km · 92.9 min · 51.6°" from the SGP4 record. */
 function describeOrbit(satrec) {
@@ -456,6 +601,7 @@ function back() {
     else if (timeBar.node) closeTimeBar();
     else if (sheet.passesOpen) togglePasses(sheet.sat);
     else if (selected) select(null);
+    else if (selectedBody) selectBody(null);
 }
 
 window.globe.openSearch = openSearch;
