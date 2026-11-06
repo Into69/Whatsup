@@ -147,8 +147,16 @@ function notifySatelliteListeners() {
     for (const listener of satelliteListeners) listener();
 }
 
+/**
+ * Whether a satellite is drawn: every one, or with layers.favouritesOnly just the starred ones (and
+ * whatever is selected, so a search or tap still shows it).
+ */
+function isDrawn(sat) {
+    return !layers.favouritesOnly || favourites.has(sat.id) || sat === selected || sat === partner;
+}
+
 function detailed() {
-    const list = [...featured];
+    const list = featured.filter(isDrawn);
     for (const sat of [selected, partner]) if (sat && !list.includes(sat)) list.push(sat);
     return list;
 }
@@ -363,6 +371,7 @@ function satelliteAt(x, y) {
     const lowOrbitShown = lowOrbitFade() > 0;
     for (const sat of satellites.values()) {
         if (!lowOrbitShown && groupStyles[sat.group].lowOrbit) continue;
+        if (!isDrawn(sat)) continue;
         const point = screenPoint(sat);
         if (!point) continue;
         const distance = Math.hypot(point[0] - x, point[1] - y);
@@ -750,7 +759,7 @@ const orbitLayer = {
         const fade = lowOrbitFade();
         this.fade = fade;
         for (const sat of dots) {
-            if (!sat.now || sat === selected) continue;
+            if (!sat.now || sat === selected || !isDrawn(sat)) continue;
             const style = groupStyles[sat.group];
             if (!style.lowOrbit) {
                 this.point(sat.now.lat, sat.now.lon, sat.now.altKm, style.color, style.size, sat.shape, HIGH_ORBIT_GROWTH);

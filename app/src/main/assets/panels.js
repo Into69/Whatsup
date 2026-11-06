@@ -758,6 +758,7 @@ function updateLegend() {
         row.append(swatch, el('span', '', g.label), el('span', 'legend-count', g.count.toLocaleString()));
         legend.append(row);
     }
+    if (layers.favouritesOnly) legend.append(el('div', 'legend-note', 'Only starred satellites are shown (Settings).'));
     if (groups.some(g => g.lowOrbit)) legend.append(el('div', 'legend-note', 'Low-orbit groups hide when zoomed far out.'));
     if (dataUpdatedAt) {
         const stale = Date.now() - dataUpdatedAt > STALE_DATA_MS;
@@ -780,7 +781,7 @@ satelliteListeners.push(updateLegend);
 let overlayOpen = false;
 
 function overlaysChanged() {
-    const open = !!(sheet.node || searchNode || sky.open || dish.open || events.node || timeBar.node);
+    const open = !!(sheet.node || searchNode || inView.node || sky.open || dish.open || events.node || timeBar.node);
     if (sheet.node) legend.style.display = 'none'; else updateLegend();
     if (open === overlayOpen) return;
     overlayOpen = open;
@@ -788,11 +789,12 @@ function overlaysChanged() {
 }
 
 /**
- * Closes the topmost panel: search, the dish aligner, events, sky view, the time bar, then the
+ * Closes the topmost panel: search, in view, the dish aligner, events, sky view, the time bar, then the
  * passes list, then the selection.
  */
 function back() {
     if (searchNode) closeSearch();
+    else if (inView.node) closeInView();
     else if (dish.open) closeDish();
     else if (events.node) closeEvents();
     else if (sky.open) closeSkyView();

@@ -42,6 +42,8 @@
     <string name="pass_alert_text">Look %1$s; it climbs to %2$d° and fades in the %3$s</string>
     <string name="search">Search satellites</string>
     <string name="sky_view">Sky view</string>
+    <string name="in_view">In line of sight from here</string>
+    <string name="layer_favourites_only">Only starred satellites\nHide every satellite you haven\'t starred (☆ in its info), on the globe, in sky view and in the in-view list. Search still finds them all</string>
     <string name="layer_orbits">Orbit paths\nEach satellite\'s orbit, drawn at altitude</string>
     <string name="layer_ground_tracks">Ground tracks\nWhere the orbit passes over the surface</string>
     <string name="layer_altitude_lines">Altitude lines\nFrom each satellite straight down to the ground</string>

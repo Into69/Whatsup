@@ -69,6 +69,12 @@
                         android:src="@drawable/ic_sky" />
 
                     <ImageButton
+                        android:id="@+id/in_view_button"
+                        style="@style/MapButton.Stacked"
+                        android:contentDescription="@string/in_view"
+                        android:src="@drawable/ic_in_view" />
+
+                    <ImageButton
                         android:id="@+id/time_button"
                         style="@style/MapButton.Stacked"
                         android:contentDescription="@string/time_travel"

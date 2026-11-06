@@ -6,6 +6,7 @@ import org.json.JSONObject
 
 /** Parts of the globe's drawing the user can turn off. [key] is the name globe.setLayers() takes. */
 enum class DisplayLayer(val key: String, @StringRes val title: Int, val shownByDefault: Boolean = true) {
+    FAVOURITES_ONLY("favouritesOnly", R.string.layer_favourites_only, shownByDefault = false),
     ORBITS("orbits", R.string.layer_orbits),
     GROUND_TRACKS("groundTracks", R.string.layer_ground_tracks),
     ALTITUDE_LINES("altitudeLines", R.string.layer_altitude_lines),

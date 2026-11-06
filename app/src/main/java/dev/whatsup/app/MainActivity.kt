@@ -170,6 +170,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         }
         findViewById<View>(R.id.search_button).setOnClickListener { runJs("globe.openSearch()") }
         findViewById<View>(R.id.sky_button).setOnClickListener { runJs("globe.toggleSkyView()") }
+        findViewById<View>(R.id.in_view_button).setOnClickListener { runJs("globe.openInView()") }
         findViewById<View>(R.id.time_button).setOnClickListener { runJs("globe.toggleTimeBar()") }
         findViewById<View>(R.id.events_button).setOnClickListener { runJs("globe.openEvents()") }
         findViewById<View>(R.id.recentre_button).setOnClickListener {

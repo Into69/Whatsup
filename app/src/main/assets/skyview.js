@@ -255,7 +255,7 @@ function updateVisible() {
     if (!here) return;
     const [lon, lat] = here;
     for (const s of satellites.values()) {
-        if (!s.now) continue;
+        if (!s.now || !isDrawn(s)) continue;
         const p = toGlobe(s.now.lat, s.now.lon, s.now.altKm);
         const dir = skyDirection(p, lat, lon);
         if (dir[2] > 0) sky.visible.push({ sat: s, dir, sunlit: !inShadow(p, sun) });
