@@ -7,8 +7,6 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * One real map tile per tile set, for the map style cards in settings: zoom 2 over the North
@@ -25,19 +23,9 @@ object TilePreviews {
             if (!file.exists()) {
                 val url = tileSet.urls.first()
                     .replace("{z}", "$Z").replace("{x}", "$X").replace("{y}", "$Y")
-                val connection = URL(url).openConnection() as HttpURLConnection
-                connection.connectTimeout = 10_000
-                connection.readTimeout = 10_000
-                // OpenStreetMap's tile policy asks for an identifying User-Agent.
-                connection.setRequestProperty("User-Agent", USER_AGENT)
-                try {
-                    if (connection.responseCode != HttpURLConnection.HTTP_OK) error("HTTP ${connection.responseCode}")
-                    val bytes = connection.inputStream.use { it.readBytes() }
-                    file.parentFile?.mkdirs()
-                    file.writeBytes(bytes)
-                } finally {
-                    connection.disconnect()
-                }
+                val bytes = Http.getBytes(url, readTimeoutMs = 10_000)
+                file.parentFile?.mkdirs()
+                file.writeBytes(bytes)
             }
             BitmapFactory.decodeFile(file.path)
         } catch (e: Exception) {

@@ -46,6 +46,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.webkit.WebViewAssetLoader
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -237,8 +238,12 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                 pageReady = true
                 // A (re)loaded page has no dish aligner open to have hidden them.
                 findViewById<View>(R.id.map_controls).visibility = View.VISIBLE
-                // A (re)loaded page has none of the satellites yet.
+                // A (re)loaded page has none of what was sent to the last one: tiles, layers,
+                // satellites, nor a view of the location to keep.
                 pushedElementSets = null
+                shownTileSetId = null
+                shownLayers = null
+                centredOnFix = false
                 pushTileSet()
                 pushLayers()
                 pushLocation()
@@ -253,19 +258,14 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     override fun onStart() {
         super.onStart()
-        // A location set by hand needs no permission; applyLocationSource() in onResume uses it.
-        if (settings.activeManualLocation != null) return
-        val permissions = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-        if (permissions.any { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
-            tracker.start()
-        } else {
-            requestPermission.launch(permissions)
-        }
+        // Coming back from SettingsActivity passes through here too, so a location set by hand (or
+        // turned off) there is picked up before anything else uses the location.
+        applyLocationSource()
     }
 
     /**
      * Uses the location set by hand in SettingsActivity, if it is on, in place of the phone's (whose
-     * tracking stops); when it is turned off, back to the phone's. The globe flies to the new one.
+     * tracking stops); otherwise the phone's. On a switch, the globe flies to the new one.
      */
     private fun applyLocationSource() {
         val manual = settings.activeManualLocation
@@ -280,17 +280,27 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             centredOnFix = false
             pushLocation()
             pushCompass()
-        } else if (shownManualLocation != null) {
-            // Back to the phone's: fly to its first fix, as at start.
+            return
+        }
+        if (shownManualLocation != null) {
+            // Back to the phone's: forget the hand-set place (the page too, so nothing goes on using
+            // it), before tracking starts and its first fix flies the globe there.
             shownManualLocation = null
             lastLocation = null
             centredOnFix = false
-            val permissions = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-            if (permissions.any { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
-                tracker.start()
-            } else {
-                requestPermission.launch(permissions)
-            }
+            if (pageReady) runJs("globe.clearLocation()")
+            pushCompass()
+        }
+        startPhoneLocation()
+    }
+
+    /** Tracks the phone's location, asking for permission first if the app hasn't got it. */
+    private fun startPhoneLocation() {
+        val permissions = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (permissions.any { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) {
+            tracker.start()
+        } else {
+            requestPermission.launch(permissions)
         }
     }
 
@@ -298,9 +308,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         super.onResume()
         webView.onResume()
         applyCacheMode()
-        // Picks up a location set by hand (or turned off), a tile set, satellite groups or layers
-        // chosen in SettingsActivity.
-        applyLocationSource()
+        // Picks up a tile set, satellite groups or layers chosen in SettingsActivity (the location
+        // was picked up in onStart).
         pushTileSet()
         pushLayers()
         loadSatellites()
@@ -359,12 +368,15 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         val groups = settings.shownGroups
         loadJob?.cancel()
         elementSets.queue(groups)
-        loadJob = lifecycleScope.launch {
+        // Started only once it is loadJob: with nothing to fetch it can finish at once, and its
+        // clean-up below must then see itself as the latest load.
+        val job = lifecycleScope.launch(start = CoroutineStart.LAZY) {
             // shownGroups keeps SatelliteGroup's order, so a satellite in several goes to the first.
             try {
                 shownElementSets = groups.flatMap { elementSets.get(it) }.distinctBy { it.noradId }
             } finally {
-                // Cancelled by a newer load, or done: nothing left waiting from this one.
+                // Done, or cancelled by a newer load (which clears the queue itself): nothing left
+                // waiting, including any left by a load this one replaced.
                 if (loadJob == coroutineContext[Job]) downloadTracker.unqueue()
             }
             pushSatellites()
@@ -372,6 +384,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             val updatedAt = groups.map(elementSets::updatedAt).filter { it > 0 }.minOrNull() ?: 0L
             if (pageReady) runJs("globe.setDataAge($updatedAt)")
         }
+        loadJob = job
+        job.start()
     }
 
     /**

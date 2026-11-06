@@ -400,6 +400,8 @@ function refreshPassAlerts() {
 }
 
 // After the satellites arrive (and with them the ISS), once a location is known, and every few hours.
+// A new location (as when one is set by hand) has other passes: the old alerts are for elsewhere.
+locationListeners.push(refreshPassAlerts);
 satelliteListeners.push(() => {
     if (!alertsAt) refreshPassAlerts();
 });

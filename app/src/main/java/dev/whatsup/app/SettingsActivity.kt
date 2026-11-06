@@ -75,18 +75,20 @@ class SettingsActivity : ComponentActivity() {
     private fun addLocation() {
         addSectionHeader(R.drawable.ic_my_location, R.string.section_location)
         val card = addCard()
-        val (title, _) = splitTitle(getString(R.string.manual_location))
         val result = TextView(this)
+        // The switch's description says which location is in use, so it changes with it.
+        lateinit var source: TextView
         lateinit var manual: Switch
-        manual = addSwitchRow(card, title, describeLocationSource(), settings.useManualLocation) { on ->
+        manual = addSwitchRow(card, getString(R.string.manual_location), describeLocationSource(), settings.useManualLocation) { on ->
             if (on && settings.manualLocation == null) {
                 manual.isChecked = false
                 result.text = getString(R.string.manual_location_first)
                 return@addSwitchRow
             }
             settings.useManualLocation = on
-            card.getChildAt(0).findViewById<TextView>(R.id.row_subtitle).text = describeLocationSource()
+            source.text = describeLocationSource()
         }
+        source = card.getChildAt(card.childCount - 1).findViewById(R.id.row_subtitle)
         addDivider(card)
 
         val row = LinearLayout(this)
@@ -116,14 +118,16 @@ class SettingsActivity : ComponentActivity() {
         settings.manualLocation?.let { result.text = describePlace(it) }
         card.addView(result)
 
+        // One lookup at a time: a new one (other text) replaces one still running, so the place kept
+        // is always the latest asked for.
+        var lookup: kotlinx.coroutines.Job? = null
         val search = {
             val text = input.text.toString()
             if (text.isNotBlank()) {
-                find.isEnabled = false
+                lookup?.cancel()
                 result.text = getString(R.string.manual_location_looking)
-                lifecycleScope.launch {
+                lookup = lifecycleScope.launch {
                     val place = Places.find(this@SettingsActivity, text)
-                    find.isEnabled = true
                     if (place == null) {
                         result.text = getString(R.string.manual_location_not_found, text.trim())
                         return@launch
@@ -131,15 +135,24 @@ class SettingsActivity : ComponentActivity() {
                     settings.manualLocation = place
                     settings.useManualLocation = true
                     manual.isChecked = true
-                    card.getChildAt(0).findViewById<TextView>(R.id.row_subtitle).text = describeLocationSource()
+                    source.text = describeLocationSource()
                     result.text = describePlace(place)
                 }
             }
         }
         find.setOnClickListener { search() }
-        input.setOnEditorActionListener { _, _, _ ->
-            search()
-            true
+        input.setOnEditorActionListener { _, actionId, event ->
+            // The keyboard's search key; or Enter on a hardware keyboard, which also sends a key-up
+            // that must not search a second time.
+            val enter = event?.keyCode == android.view.KeyEvent.KEYCODE_ENTER
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH ||
+                (enter && event?.action == android.view.KeyEvent.ACTION_DOWN)
+            ) {
+                search()
+                true
+            } else {
+                enter
+            }
         }
     }
 

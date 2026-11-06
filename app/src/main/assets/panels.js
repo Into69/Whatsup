@@ -180,6 +180,13 @@ timeListeners.push(() => {
     sheet.nextPass = null;
     refreshSheetLive();
 });
+// Another location: its passes, rise and set times and sun outages, not the old place's.
+locationListeners.push(() => {
+    sheet.nextPass = null;
+    sheet.bodyTimes = null;
+    if (sheet.outagesOpen && sheet.sat) findOutages(sheet.sat);
+    refreshSheetLive();
+});
 
 /**
  * In sunlight or Earth's shadow, and when that next changes: "In sunlight · into Earth's shadow in

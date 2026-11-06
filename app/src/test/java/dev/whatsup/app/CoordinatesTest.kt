@@ -110,6 +110,12 @@ class CoordinatesTest {
             "53 33 18 N 113 30 0 W",
             "53 33.3, -113 30",
             "113.5W 53.555N",
+            // A minus sign spaced off its number, and letters placed differently on each half.
+            "53.555 - 113.5",
+            "53.555, - 113.5",
+            "N53.555 113.5W",
+            "53.555N W113.5",
+            "N 53 33 18 W 113 30",
         )
         for (input in inputs) {
             val parsed = Coordinates.parseLatLon(input)
@@ -126,5 +132,9 @@ class CoordinatesTest {
         assertNull(Coordinates.parseLatLon("95, 10"))
         assertNull(Coordinates.parseLatLon("12U VD 4153 4122"))
         assertNull(Coordinates.parseLatLon("53.5"))
+        // Two latitudes, or two longitudes, aren't a position.
+        assertNull(Coordinates.parseLatLon("45N 60N"))
+        assertNull(Coordinates.parseLatLon("45E, 60W"))
+        assertNull(Coordinates.parseLatLon("53.5 N S 113.5"))
     }
 }

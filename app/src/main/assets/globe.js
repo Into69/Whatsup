@@ -3,6 +3,7 @@
 // The globe page. MainActivity drives it through window.globe:
 //   setTiles(tileSet)                       swap the raster tiles (TileSet.toJson())
 //   setLocation(lat, lon, accuracyM, centre) move the "you" marker, flying there when centre is true
+//   clearLocation()                         forget the location (a hand-set one turned off)
 //   recentre()                              fly back to the last location
 //   setLayers(layers)                       show or hide parts of the drawing (Settings.layersJson())
 // and the other scripts add their own (see each one's last lines).
@@ -136,8 +137,14 @@ function setTiles(tileSet) {
     });
 }
 
+/** Called when the location moves more than LOCATION_MOVE_KM, or is cleared: for what depends on it. */
+const locationListeners = [];
+const LOCATION_MOVE_KM = 1;
+
 function setLocation(lat, lon, accuracyM, centre) {
+    const moved = !here || haversineKm(here[1], here[0], lat, lon) > LOCATION_MOVE_KM;
     here = [lon, lat];
+    if (moved) for (const listener of locationListeners) listener();
     if (!marker) {
         const el = document.createElement('div');
         el.className = 'you';
@@ -181,4 +188,20 @@ function accuracyCircle(lat, lon, radiusM) {
     return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: {} };
 }
 
-window.globe = { setTiles, setLocation, recentre, setLayers };
+/** No location: a hand-set one turned off, until the phone's first fix. */
+function clearLocation() {
+    here = null;
+    marker?.remove();
+    marker = null;
+    loaded.then(() => map.getSource('accuracy').setData(emptyFeatures()));
+    for (const listener of locationListeners) listener();
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+    const rad = Math.PI / 180;
+    const a = Math.sin((lat2 - lat1) * rad / 2) ** 2 +
+        Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin((lon2 - lon1) * rad / 2) ** 2;
+    return 2 * 6371.0088 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+window.globe = { setTiles, setLocation, clearLocation, recentre, setLayers };

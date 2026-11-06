@@ -5,8 +5,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import java.io.File
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 
 /** A download, as the progress panel shows it. [totalBytes] is -1 when the server doesn't say. */
 data class Download(val file: String, val bytesRead: Long, val totalBytes: Long, val state: State) {
@@ -65,46 +63,21 @@ class DownloadTracker {
      * reporting progress under [key] as [name]. Blocking; call off the main thread.
      */
     fun downloadTo(url: String, file: File, key: String, name: String) {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        connection.connectTimeout = 15_000
-        connection.readTimeout = 60_000
-        connection.setRequestProperty("User-Agent", USER_AGENT)
         val partial = File(file.path + ".part")
         try {
             report(key, name, bytesRead = 0, totalBytes = -1)
-            val code = connection.responseCode
-            if (code != HttpURLConnection.HTTP_OK) throw IOException("HTTP $code")
-            val total = connection.contentLengthLong
             file.parentFile?.mkdirs()
-            var read = 0L
-            var lastReport = 0L
-            connection.inputStream.use { input ->
-                partial.outputStream().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val n = input.read(buffer)
-                        if (n < 0) break
-                        output.write(buffer, 0, n)
-                        read += n
-                        if (read - lastReport >= REPORT_EVERY_BYTES) {
-                            lastReport = read
-                            report(key, name, bytesRead = read, totalBytes = total)
-                        }
-                    }
+            partial.outputStream().use { output ->
+                Http.get(url, output, readTimeoutMs = 60_000) { read, total ->
+                    report(key, name, bytesRead = read, totalBytes = total)
                 }
             }
             if (!partial.renameTo(file)) throw IOException("Couldn't replace $file")
-            report(key, name, bytesRead = read, totalBytes = total, state = Download.State.DONE)
+            report(key, name, state = Download.State.DONE)
         } catch (e: Exception) {
             partial.delete()
             report(key, name, state = Download.State.FAILED)
             throw e
-        } finally {
-            connection.disconnect()
         }
-    }
-
-    companion object {
-        const val REPORT_EVERY_BYTES = 32 * 1024L
     }
 }

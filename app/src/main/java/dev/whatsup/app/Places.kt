@@ -5,9 +5,11 @@ import android.location.Address
 import android.location.Geocoder
 import android.os.Build
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 
 /** A location found from what the user typed: where it is, a name for it, and how it was read. */
@@ -21,13 +23,17 @@ data class Place(val position: LatLon, val label: String, val source: Source) {
  */
 object Places {
     private const val TAG = "Places"
+    /** How long typed coordinates wait for a place name before going without one. */
+    private const val NAME_TIMEOUT_MS = 3_000L
 
     /** The place, or null if the text is neither coordinates nor an address the Geocoder knows. */
     suspend fun find(context: Context, text: String): Place? {
         val query = text.trim()
         if (query.isEmpty()) return null
-        Coordinates.parseLatLon(query)?.let { return Place(it, nameFor(context, it) ?: it.format(), Place.Source.COORDINATES) }
-        Coordinates.parseMgrs(query)?.let { return Place(it, nameFor(context, it) ?: it.format(), Place.Source.MGRS) }
+        // Typed coordinates need no network; a name for them is only a nicety, so not waited on long.
+        suspend fun named(position: LatLon) = withTimeoutOrNull(NAME_TIMEOUT_MS) { nameFor(context, position) }
+        Coordinates.parseLatLon(query)?.let { return Place(it, named(it) ?: it.format(), Place.Source.COORDINATES) }
+        Coordinates.parseMgrs(query)?.let { return Place(it, named(it) ?: it.format(), Place.Source.MGRS) }
         val address = lookUp(context) { geocoder, done ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 geocoder.getFromLocationName(query, 1, listener(done))
@@ -68,6 +74,9 @@ object Places {
                     if (continuation.isActive) continuation.resume(addresses?.firstOrNull())
                 }
             }
+        } catch (e: CancellationException) {
+            // Not a failure: the lookup was given up (timed out, or the screen closed).
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Geocoder failed", e)
             null

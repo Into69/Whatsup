@@ -12,7 +12,6 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.HttpURLConnection
-import java.net.URL
 import kotlin.math.PI
 import kotlin.math.cbrt
 
@@ -302,39 +301,17 @@ class ElementSetRepository(context: Context, private val tracker: DownloadTracke
      * refuses because it has nothing newer than what this device last fetched (its two-hour rule).
      */
     private fun download(query: String, name: String): String? {
-        val connection = URL("https://celestrak.org/NORAD/elements/gp.php?$query&FORMAT=csv")
-            .openConnection() as HttpURLConnection
-        connection.connectTimeout = 15_000
-        connection.readTimeout = 60_000
-        connection.setRequestProperty("User-Agent", USER_AGENT)
+        val out = ByteArrayOutputStream(64 * 1024)
         try {
             report(query, name, bytesRead = 0, totalBytes = -1)
-            val code = connection.responseCode
-            if (code == HttpURLConnection.HTTP_FORBIDDEN) {
-                val message = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (NOT_UPDATED in message) return null
+            Http.get("https://celestrak.org/NORAD/elements/gp.php?$query&FORMAT=csv", out, readTimeoutMs = 60_000) { read, total ->
+                report(query, name, bytesRead = read, totalBytes = total)
             }
-            if (code != HttpURLConnection.HTTP_OK) error("HTTP $code")
-            val total = connection.contentLengthLong
-            val out = ByteArrayOutputStream(if (total > 0) total.toInt() else 64 * 1024)
-            val buffer = ByteArray(16 * 1024)
-            var lastReport = 0L
-            connection.inputStream.use { input ->
-                while (true) {
-                    val n = input.read(buffer)
-                    if (n < 0) break
-                    out.write(buffer, 0, n)
-                    if (out.size() - lastReport >= DownloadTracker.REPORT_EVERY_BYTES) {
-                        lastReport = out.size().toLong()
-                        report(query, name, bytesRead = lastReport, totalBytes = total)
-                    }
-                }
-            }
-            report(query, name, bytesRead = out.size().toLong(), totalBytes = total)
-            return out.toString(Charsets.UTF_8.name())
-        } finally {
-            connection.disconnect()
+        } catch (e: Http.StatusException) {
+            if (e.code == HttpURLConnection.HTTP_FORBIDDEN && NOT_UPDATED in e.body) return null
+            throw e
         }
+        return out.toString(Charsets.UTF_8.name())
     }
 
     private fun report(
@@ -355,4 +332,3 @@ class ElementSetRepository(context: Context, private val tracker: DownloadTracke
     }
 }
 
-val USER_AGENT = "WhatsUp/${BuildConfig.VERSION_NAME} (Android)"

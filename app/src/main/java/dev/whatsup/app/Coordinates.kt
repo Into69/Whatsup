@@ -41,6 +41,9 @@ object Coordinates {
         val halves = splitHalves(cleaned) ?: return null
         val first = parseAngle(halves.first) ?: return null
         val second = parseAngle(halves.second) ?: return null
+        // Both north/south, or both east/west: not a latitude and a longitude.
+        val axis = { letter: Char -> if (letter in "NS") 'y' else if (letter in "EW") 'x' else ' ' }
+        if (axis(first.second) != ' ' && axis(first.second) == axis(second.second)) return null
         // A hemisphere letter says which is which; otherwise latitude comes first.
         val (lat, lon) = when {
             first.second in "EW" || second.second in "NS" -> second.first to first.first
@@ -50,32 +53,42 @@ object Coordinates {
         return LatLon(lat, lon)
     }
 
-    /** The text cut into its latitude and longitude parts: at a comma, after a hemisphere letter, or by its numbers. */
+    /** Numbers (a sign may be spaced off them: "- 113.5") and hemisphere letters. */
+    private fun tokens(text: String): List<String> =
+        Regex("[NSEW]|[+\\-]?\\s*[0-9.]+").findAll(text).map { it.value.replace(Regex("\\s"), "") }.toList()
+
+    private fun isLetter(token: String) = token.length == 1 && token[0] in "NSEW"
+
+    /**
+     * The text cut into its latitude and longitude parts: at a comma; else at a hemisphere letter
+     * between the two sets of numbers, which belongs to the second when letters come first
+     * ("N53 33 W113 30") and to the first when they come after ("53 33 N 113 30 W"); else half the
+     * numbers each.
+     */
     private fun splitHalves(text: String): Pair<String, String>? {
         Regex("[,;]").find(text)?.let { comma ->
             return text.substring(0, comma.range.first).trim() to text.substring(comma.range.last + 1).trim()
         }
-        // A letter after the first set of numbers ends the first half ("53 33 N 113 30 W"); one before
-        // the second set starts the second ("N53.5 W113.5").
-        val tokens = Regex("[NSEW]|[+\\-]?[0-9.]+").findAll(text).map { it.value }.toList()
-        val letters = tokens.withIndex().filter { it.value.length == 1 && it.value[0] in "NSEW" }
-        if (letters.size == 2) {
-            val firstLetter = letters[0].index
-            val cut = if (firstLetter == 0) letters[1].index else firstLetter + 1
-            return tokens.subList(0, cut).joinToString(" ") to tokens.subList(cut, tokens.size).joinToString(" ")
+        val tokens = tokens(text)
+        val numbers = tokens.indices.filter { !isLetter(tokens[it]) }
+        if (numbers.size < 2) return null
+        val between = tokens.indices.filter { isLetter(tokens[it]) && it > numbers.first() && it < numbers.last() }
+        val cut = when (between.size) {
+            0 -> if (numbers.size % 2 == 0) numbers[numbers.size / 2] else return null
+            1 -> if (isLetter(tokens[0])) between[0] else between[0] + 1
+            2 -> between[1]
+            else -> return null
         }
-        if (letters.isNotEmpty()) return null
-        // No letters, no comma: two, four or six numbers, half each.
-        if (tokens.size !in listOf(2, 4, 6)) return null
-        val half = tokens.size / 2
-        return tokens.subList(0, half).joinToString(" ") to tokens.subList(half, tokens.size).joinToString(" ")
+        return tokens.subList(0, cut).joinToString(" ") to tokens.subList(cut, tokens.size).joinToString(" ")
     }
 
     /** "53 33 18 N" to (53.555, 'N'); a letter of ' ' when there is none. Degrees, minutes, seconds; S and W negative. */
     private fun parseAngle(text: String): Pair<Double, Char>? {
-        val tokens = Regex("[NSEW]|[+\\-]?[0-9.]+").findAll(text).map { it.value }.toList()
-        val letter = tokens.firstOrNull { it.length == 1 && it[0] in "NSEW" }?.get(0) ?: ' '
-        val numbers = tokens.filter { !(it.length == 1 && it[0] in "NSEW") }.map { it.toDoubleOrNull() ?: return null }
+        val tokens = tokens(text)
+        val letters = tokens.filter(::isLetter)
+        if (letters.size > 1) return null
+        val letter = letters.firstOrNull()?.get(0) ?: ' '
+        val numbers = tokens.filterNot(::isLetter).map { it.toDoubleOrNull() ?: return null }
         if (numbers.isEmpty() || numbers.size > 3) return null
         val negative = numbers[0] < 0 || text.trim().startsWith("-")
         val parts = numbers.mapIndexed { i, n -> if (i == 0) abs(n) else n }

@@ -1,13 +1,20 @@
 'use strict';
 
 // Time travel: a bar (MainActivity's clock button, globe.toggleTimeBar) that sets the globe's clock
-// (globe.js's simNow) from a day back to a week ahead: satellites, orbits, the Sun and night side,
+// (globe.js's simNow) from a day back to a week ahead (further, to a year, when a sun outage is
+// picked): satellites, orbits, the Sun and night side,
 // the stars and Moon, sky view and pass predictions all follow it. It can also run the clock faster.
 // While the clock is off the real time and the bar is closed, a pill at the top says so.
 
 const TIME_BEHIND_MS = 24 * 60 * 60 * 1000;
-/** A week: as far as SOCRATES' close approaches go. */
+/** The slider's reach ahead: a week, as far as SOCRATES' close approaches go. */
 const TIME_AHEAD_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * How far ahead the clock can go at all: a year and a day, for the sun outages a GEO satellite's
+ * sheet can jump to. Beyond the slider's week the slider sits at its end, and the buttons and play
+ * carry on from wherever the clock is.
+ */
+const TIME_LIMIT_AHEAD_MS = 366 * 24 * 60 * 60 * 1000;
 /** The slider runs -SLIDER_STEPS..SLIDER_STEPS, cubed, so it is fine near now and coarse far off. */
 const SLIDER_STEPS = 1000;
 const TIME_SPEEDS = [1, 10, 100, 1000];
@@ -19,6 +26,8 @@ const timeBar = {
     pill: null,
     speed: 1,
     playedAt: 0,
+    /** Whether play()'s animation loop is running. */
+    playing: false,
 };
 
 function toggleTimeBar() {
@@ -83,7 +92,7 @@ function closeTimeBar() {
 }
 
 function clampOffset(ms) {
-    return Math.max(-TIME_BEHIND_MS, Math.min(TIME_AHEAD_MS, ms));
+    return Math.max(-TIME_BEHIND_MS, Math.min(TIME_LIMIT_AHEAD_MS, ms));
 }
 
 function sliderToOffset(value) {
@@ -92,7 +101,7 @@ function sliderToOffset(value) {
 }
 
 function offsetToSlider(ms) {
-    const t = ms / (ms < 0 ? TIME_BEHIND_MS : TIME_AHEAD_MS);
+    const t = Math.max(-1, Math.min(1, ms / (ms < 0 ? TIME_BEHIND_MS : TIME_AHEAD_MS)));
     return Math.round(Math.cbrt(t) * SLIDER_STEPS);
 }
 
@@ -131,13 +140,20 @@ function refreshTimeBar(moveSlider) {
 function setSpeed(speed) {
     timeBar.speed = speed;
     timeBar.playedAt = performance.now();
-    if (speed > 1) requestAnimationFrame(play);
+    // One loop however often the speed changes; it stops itself at ×1.
+    if (speed > 1 && !timeBar.playing) {
+        timeBar.playing = true;
+        requestAnimationFrame(play);
+    }
     refreshTimeBar(true);
 }
 
 /** Runs the clock at timeBar.speed: the offset grows by (speed - 1) times the real time passing. */
 function play() {
-    if (timeBar.speed === 1) return;
+    if (timeBar.speed === 1) {
+        timeBar.playing = false;
+        return;
+    }
     requestAnimationFrame(play);
     const now = performance.now();
     const elapsed = now - timeBar.playedAt;
@@ -145,7 +161,7 @@ function play() {
     timeBar.playedAt = now;
     const next = clampOffset(timeOffsetMs + elapsed * (timeBar.speed - 1));
     setTimeOffset(next);
-    if (next === TIME_AHEAD_MS) setSpeed(1);
+    if (next === TIME_LIMIT_AHEAD_MS) setSpeed(1);
     refreshTimeBar(true);
 }
 

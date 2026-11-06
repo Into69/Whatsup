@@ -5,8 +5,6 @@ import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 
@@ -22,8 +20,10 @@ class ConjunctionFeed(context: Context, private val tracker: DownloadTracker) {
     /**
      * The page's close approaches as JSON: { updatedAt, rows: [[id1, name1, id2, name2, tca (ms),
      * range (km), relative speed (km/s), probability]] }, closest first; null if there is no copy
-     * and the download fails. Blocking: call off the main thread.
+     * and the download fails. Blocking: call off the main thread. One at a time, so two requests
+     * can't download into the same file at once.
      */
+    @Synchronized
     fun load(shown: Set<Int>, starred: Set<Int>): ByteArray? {
         if (!file.exists() || System.currentTimeMillis() - file.lastModified() > MAX_AGE_MS) {
             try {
@@ -142,20 +142,10 @@ class LaunchFeed(context: Context) {
     }
 
     private fun download() {
-        val connection = URL(URL).openConnection() as HttpURLConnection
-        connection.connectTimeout = 15_000
-        connection.readTimeout = 30_000
-        connection.setRequestProperty("User-Agent", USER_AGENT)
-        try {
-            val code = connection.responseCode
-            if (code != HttpURLConnection.HTTP_OK) error("HTTP $code")
-            val text = connection.inputStream.use { it.readBytes() }.toString(Charsets.UTF_8)
-            JSONObject(text) // Check it is whole before replacing the copy.
-            file.parentFile?.mkdirs()
-            file.writeText(text)
-        } finally {
-            connection.disconnect()
-        }
+        val text = Http.getBytes(URL).toString(Charsets.UTF_8)
+        JSONObject(text) // Check it is whole before replacing the copy.
+        file.parentFile?.mkdirs()
+        file.writeText(text)
     }
 
     private fun compact(response: JSONObject): JSONObject {
@@ -182,8 +172,10 @@ class LaunchFeed(context: Context) {
                 .put("orbit", mission?.optJSONObject("orbit")?.optString("abbrev").orEmpty())
                 .put("pad", pad.optString("name"))
                 .put("location", pad.optJSONObject("location")?.optString("name").orEmpty())
-                .put("lat", pad.optDouble("latitude"))
-                .put("lon", pad.optDouble("longitude")))
+                // A pad still to be decided has no coordinates: null (JSON can't hold NaN), so the
+                // launch is listed without a marker rather than failing the whole list.
+                .put("lat", pad.optDouble("latitude").takeUnless { it.isNaN() } ?: JSONObject.NULL)
+                .put("lon", pad.optDouble("longitude").takeUnless { it.isNaN() } ?: JSONObject.NULL))
         }
         return JSONObject().put("updatedAt", file.lastModified()).put("launches", launches)
     }

@@ -57,7 +57,7 @@
     <string name="section_alerts">Alerts</string>
     <string name="section_about">About</string>
     <string name="section_location">Location</string>
-    <string name="manual_location">Set my location manually\nUse the place below instead of the phone\'s GPS</string>
+    <string name="manual_location">Set my location manually</string>
     <string name="manual_location_off">Using the phone\'s GPS and network location</string>
     <string name="manual_location_on">Using %1$s</string>
     <string name="manual_location_first">Find a place below first.</string>

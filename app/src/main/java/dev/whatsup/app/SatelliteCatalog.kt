@@ -3,8 +3,6 @@ package dev.whatsup.app
 import android.content.Context
 import android.util.Log
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * Looks satellites up in CelesTrak's satellite catalogue (SATCAT): owner, object type, launch date
@@ -24,21 +22,11 @@ class SatelliteCatalog(context: Context) {
         val cached = file.takeIf { it.exists() }?.readBytes()
         if (cached != null && System.currentTimeMillis() - file.lastModified() < MAX_AGE_MS) return cached
         return try {
-            val connection = URL("https://celestrak.org/satcat/records.php?CATNR=$noradId&FORMAT=json")
-                .openConnection() as HttpURLConnection
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 15_000
-            connection.setRequestProperty("User-Agent", USER_AGENT)
-            try {
-                if (connection.responseCode != HttpURLConnection.HTTP_OK) error("HTTP ${connection.responseCode}")
-                val body = connection.inputStream.use { it.readBytes() }
-                if (body.firstOrNull() != '['.code.toByte()) error("Not JSON: ${String(body).take(200)}")
-                dir.mkdirs()
-                file.writeBytes(body)
-                body
-            } finally {
-                connection.disconnect()
-            }
+            val body = Http.getBytes("https://celestrak.org/satcat/records.php?CATNR=$noradId&FORMAT=json", readTimeoutMs = 15_000)
+            if (body.firstOrNull() != '['.code.toByte()) error("Not JSON: ${String(body).take(200)}")
+            dir.mkdirs()
+            file.writeBytes(body)
+            body
         } catch (e: Exception) {
             Log.w(TAG, "SATCAT lookup of $noradId failed; cached: ${cached != null}", e)
             cached
