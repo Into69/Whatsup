@@ -56,25 +56,10 @@ object TileSets {
             attribution = "&copy; Esri",
             maxZoom = 19,
         ),
-        TileSet(
-            id = "carto-dark",
-            name = "Dark",
-            description = "CARTO Dark Matter",
-            urls = listOf("a", "b", "c", "d").map { "https://$it.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png" },
-            attribution = "&copy; OpenStreetMap contributors &copy; CARTO",
-            maxZoom = 20,
-        ),
-        TileSet(
-            id = "carto-light",
-            name = "Light",
-            description = "CARTO Positron",
-            urls = listOf("a", "b", "c", "d").map { "https://$it.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png" },
-            attribution = "&copy; OpenStreetMap contributors &copy; CARTO",
-            maxZoom = 20,
-        ),
     )
 
     val default = all.first()
 
+    /** A saved choice that is no longer offered (such as the CARTO maps, since dropped) falls back to the default. */
     fun byId(id: String?): TileSet = all.firstOrNull { it.id == id } ?: default
 }
