@@ -24,6 +24,11 @@ const dish = {
     sat: null,
     /** 'back' (hold the phone up and look along its back) or 'top' (lay it on the arm, top edge forward). */
     aim: 'back',
+    /**
+     * Top edge only: how much higher the dish's beam looks than its arm (degrees), as for an offset
+     * dish; kept while the app runs.
+     */
+    elevationOffset: 0,
     canvas: null,
     /** A calibration in progress: 'sun' or 'moon', waiting for the user to aim and tap Set. */
     calibrating: null,
@@ -71,9 +76,39 @@ function buildDish(sat) {
             dish.aim = value;
             aim.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === button));
             dish.node.querySelector('.dish-how').textContent = aimHint();
+            offset.style.display = value === 'top' ? '' : 'none';
         });
         aim.append(button);
     }
+
+    // Top edge: the beam's offset above the arm, typed or stepped.
+    const offset = el('div', 'dish-offset');
+    offset.style.display = dish.aim === 'top' ? '' : 'none';
+    const offsetInput = el('input');
+    offsetInput.type = 'number';
+    offsetInput.inputMode = 'decimal';
+    offsetInput.step = '0.1';
+    offsetInput.min = '-90';
+    offsetInput.max = '90';
+    offsetInput.value = dish.elevationOffset;
+    const setOffset = degrees => {
+        dish.elevationOffset = Math.max(-90, Math.min(90, Math.round(degrees * 10) / 10));
+        offsetInput.value = dish.elevationOffset;
+    };
+    offsetInput.addEventListener('input', () => {
+        const value = parseFloat(offsetInput.value);
+        if (Number.isFinite(value)) dish.elevationOffset = Math.max(-90, Math.min(90, value));
+    });
+    offsetInput.addEventListener('change', () => setOffset(parseFloat(offsetInput.value) || 0));
+    const step = (label, change) => {
+        const button = el('button', '', label);
+        button.addEventListener('click', () => setOffset(dish.elevationOffset + change));
+        return button;
+    };
+    const offsetRow = el('div', 'dish-offset-row');
+    offsetRow.append(el('span', 'dish-offset-label', 'Elevation offset'), step('−1', -1), offsetInput, el('span', '', '°'), step('+1', 1));
+    offset.append(offsetRow, el('div', 'sheet-hint',
+        'An offset dish looks this much higher than its arm (often 17–28°; see its spec sheet). 0 for a dish that looks along its arm.'));
 
     dish.canvas = el('canvas', 'dish-scope');
     const calibrate = el('div', 'sheet-buttons');
@@ -97,6 +132,7 @@ function buildDish(sat) {
         el('div', 'sheet-line dish-target'),
         aim,
         el('div', 'sheet-line sheet-hint dish-how', aimHint()),
+        offset,
         dish.canvas,
         el('div', 'dish-steps'),
         el('div', 'sheet-line dish-phone'),
@@ -112,8 +148,7 @@ function buildDish(sat) {
 function aimHint() {
     return dish.aim === 'back'
         ? 'Hold the phone up and aim its back at the satellite, like taking a photo of it.'
-        : 'Lay the phone on the dish arm, screen up, its top edge pointing the way the dish looks. ' +
-          'Offset dishes look higher than their arm: use the mount\'s elevation scale for tilt.';
+        : 'Lay the phone on the dish arm, screen up, its top edge pointing out along the arm, the way the dish looks.';
 }
 
 /** Saves a new compass calibration (degrees added to headings) through MainActivity. */
@@ -124,10 +159,21 @@ function setCompassOffset(degrees) {
     window.Android?.setCompassOffset(rounded);
 }
 
-/** Where the phone points, as azimuth, elevation and roll (degrees), by the aim chosen. */
+/**
+ * Where the phone points, as azimuth, elevation and roll (degrees), by the aim chosen. Laid on the
+ * arm, that is the dish's beam: the top edge's direction tilted up towards the screen side by the
+ * elevation offset (about the phone's own left-right axis, so it holds however the arm is turned).
+ */
 function phonePointing() {
-    const forward = deviceToWorld(dish.aim === 'back' ? [0, 0, -1] : [0, 1, 0]);
-    const reference = deviceToWorld(dish.aim === 'back' ? [0, 1, 0] : [0, 0, 1]);
+    let forward, reference;
+    if (dish.aim === 'back') {
+        forward = deviceToWorld([0, 0, -1]);
+        reference = deviceToWorld([0, 1, 0]);
+    } else {
+        const o = dish.elevationOffset * Math.PI / 180;
+        forward = deviceToWorld([0, Math.cos(o), Math.sin(o)]);
+        reference = deviceToWorld([0, -Math.sin(o), Math.cos(o)]);
+    }
     const [az, el] = azEl(forward);
     // Roll: how far the phone's "up" is turned from the vertical about the line it points along,
     // counter-clockwise looking along it (as skew is).
@@ -218,7 +264,8 @@ function drawDish() {
         return;
     }
     const phone = phonePointing();
-    text('.dish-phone', `Phone: Az ${phone.az.toFixed(1)}° · El ${phone.el.toFixed(1)}° · Roll ${phone.roll.toFixed(1)}°`);
+    const what = dish.aim === 'top' && dish.elevationOffset ? `Dish (arm + ${dish.elevationOffset.toFixed(1)}°)` : 'Phone';
+    text('.dish-phone', `${what}: Az ${phone.az.toFixed(1)}° · El ${phone.el.toFixed(1)}° · Roll ${phone.roll.toFixed(1)}°`);
 
     const dAz = angleDifference(target.az, phone.az);
     const dEl = target.el - phone.el;
