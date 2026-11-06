@@ -21,6 +21,7 @@ object TilePreviews {
         val file = File(File(context.cacheDir, "tile-previews"), "${tileSet.id}.img")
         try {
             if (!file.exists()) {
+                if (Http.offline) return@withContext null
                 val url = tileSet.urls.first()
                     .replace("{z}", "$Z").replace("{x}", "$X").replace("{y}", "$Y")
                 val bytes = Http.getBytes(url, readTimeoutMs = 10_000)

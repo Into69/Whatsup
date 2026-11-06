@@ -220,13 +220,16 @@ class ElementSetRepository(context: Context, private val tracker: DownloadTracke
 
     private fun isStale(file: File) = !file.exists() || System.currentTimeMillis() - file.lastModified() >= MAX_AGE_MS
 
+    /** Whether to download the file again: when it is stale, unless in offline mode. */
+    private fun isDue(file: File) = !Http.offline && isStale(file)
+
     /**
      * Puts the groups' files that are due a download in the progress panel's queue, so it can say
      * from the start how many there are. [get] then takes them off one by one.
      */
     fun queue(groups: List<SatelliteGroup>) {
         for (query in groups.flatMap { it.queries }.distinct()) {
-            if (isStale(fileFor(query))) tracker.queue(query, nameFor(query))
+            if (isDue(fileFor(query))) tracker.queue(query, nameFor(query))
         }
     }
 
@@ -252,10 +255,11 @@ class ElementSetRepository(context: Context, private val tracker: DownloadTracke
         val name = nameFor(query)
         val file = fileFor(query)
         val cached = file.exists()
-        if (cached && !isStale(file)) {
-            // Queued, but another group's fetch has since brought it up to date.
+        if (!isDue(file)) {
+            // Queued, but another group's fetch has since brought it up to date, or offline mode
+            // was turned on.
             tracker.unqueue(query)
-            return file
+            return file.takeIf { cached }
         }
         try {
             val text = download(query, name)

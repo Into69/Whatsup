@@ -18,6 +18,15 @@ object Http {
     /** How often, in bytes read, progress is reported. */
     const val REPORT_EVERY_BYTES = 32 * 1024L
 
+    /**
+     * Offline mode, set from Settings: every request fails at once with [OfflineException], so
+     * nothing goes out and callers fall back on their saved copies.
+     */
+    @Volatile
+    var offline = false
+
+    class OfflineException : IOException("Offline mode is on")
+
     /** A response other than 200 OK, with its body, for callers that read the reason. */
     class StatusException(val code: Int, val body: String) : IOException("HTTP $code")
 
@@ -31,6 +40,7 @@ object Http {
         readTimeoutMs: Int = 30_000,
         onProgress: ((Long, Long) -> Unit)? = null,
     ): Long {
+        if (offline) throw OfflineException()
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.connectTimeout = CONNECT_TIMEOUT_MS
         connection.readTimeout = readTimeoutMs

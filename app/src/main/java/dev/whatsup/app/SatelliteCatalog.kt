@@ -21,6 +21,7 @@ class SatelliteCatalog(context: Context) {
         val file = File(dir, "$noradId.json")
         val cached = file.takeIf { it.exists() }?.readBytes()
         if (cached != null && System.currentTimeMillis() - file.lastModified() < MAX_AGE_MS) return cached
+        if (Http.offline) return cached
         return try {
             val body = Http.getBytes("https://celestrak.org/satcat/records.php?CATNR=$noradId&FORMAT=json", readTimeoutMs = 15_000)
             if (body.firstOrNull() != '['.code.toByte()) error("Not JSON: ${String(body).take(200)}")

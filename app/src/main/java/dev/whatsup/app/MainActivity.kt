@@ -423,12 +423,19 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         null
     }
 
-    /** Offline, map tiles come from the WebView's cache even when it holds them as stale. */
+    /**
+     * Offline, map tiles come from the WebView's cache even when it holds them as stale; in offline
+     * mode, only from there, never the network.
+     */
     private fun applyCacheMode() {
         val connectivity = getSystemService(ConnectivityManager::class.java)
         val online = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
             ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-        webView.settings.cacheMode = if (online) WebSettings.LOAD_DEFAULT else WebSettings.LOAD_CACHE_ELSE_NETWORK
+        webView.settings.cacheMode = when {
+            settings.offlineMode -> WebSettings.LOAD_CACHE_ONLY
+            online -> WebSettings.LOAD_DEFAULT
+            else -> WebSettings.LOAD_CACHE_ELSE_NETWORK
+        }
     }
 
     /** One row per download, with a progress bar; the panel goes once all have finished and been seen. */

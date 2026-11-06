@@ -54,6 +54,7 @@ class SettingsActivity : ComponentActivity() {
             ?: SatelliteCategory.entries.filter { category -> category.groups.any(settings::isShown) }
 
         addLocation()
+        addOffline()
         addMapStyles()
         addSatellites()
         addDisplay()
@@ -129,7 +130,10 @@ class SettingsActivity : ComponentActivity() {
                 lookup = lifecycleScope.launch {
                     val place = Places.find(this@SettingsActivity, text)
                     if (place == null) {
-                        result.text = getString(R.string.manual_location_not_found, text.trim())
+                        result.text = getString(
+                            if (settings.offlineMode) R.string.manual_location_not_found_offline else R.string.manual_location_not_found,
+                            text.trim(),
+                        )
                         return@launch
                     }
                     settings.manualLocation = place
@@ -285,6 +289,14 @@ class SettingsActivity : ComponentActivity() {
             val (title, description) = splitTitle(getString(layer.title))
             addSwitchRow(card, title, description, settings.isShown(layer)) { settings.setShown(layer, it) }
         }
+    }
+
+    /** Offline mode: the app uses only what it has saved (see Settings.offlineMode). */
+    private fun addOffline() {
+        addSectionHeader(R.drawable.ic_globe, R.string.section_data)
+        val card = addCard()
+        val (title, description) = splitTitle(getString(R.string.offline_mode))
+        addSwitchRow(card, title, description, settings.offlineMode) { settings.offlineMode = it }
     }
 
     private fun addAlerts() {

@@ -57,6 +57,9 @@
     <string name="section_alerts">Alerts</string>
     <string name="section_about">About</string>
     <string name="section_location">Location</string>
+    <string name="section_data">Data</string>
+    <string name="offline_mode">Offline mode\nUse only what is saved on this phone: no downloads of orbital data, launches, close approaches or satellite details, and map tiles only from the cache (places you have already viewed). Turn off to update</string>
+    <string name="manual_location_not_found_offline">Couldn\'t find \"%1$s\". Offline mode is on, so addresses can\'t be looked up: use latitude and longitude (53.55, -113.5) or MGRS (12U VD 41533 41226), or turn offline mode off.</string>
     <string name="manual_location">Set my location manually</string>
     <string name="manual_location_off">Using the phone\'s GPS and network location</string>
     <string name="manual_location_on">Using %1$s</string>

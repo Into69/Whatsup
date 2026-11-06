@@ -25,7 +25,7 @@ class ConjunctionFeed(context: Context, private val tracker: DownloadTracker) {
      */
     @Synchronized
     fun load(shown: Set<Int>, starred: Set<Int>): ByteArray? {
-        if (!file.exists() || System.currentTimeMillis() - file.lastModified() > MAX_AGE_MS) {
+        if (!Http.offline && (!file.exists() || System.currentTimeMillis() - file.lastModified() > MAX_AGE_MS)) {
             try {
                 tracker.downloadTo(URL, file, KEY, "SOCRATES close approaches")
             } catch (e: Exception) {
@@ -125,7 +125,7 @@ class LaunchFeed(context: Context) {
      */
     @Synchronized
     fun load(): ByteArray? {
-        if (!file.exists() || System.currentTimeMillis() - file.lastModified() > MAX_AGE_MS) {
+        if (!Http.offline && (!file.exists() || System.currentTimeMillis() - file.lastModified() > MAX_AGE_MS)) {
             try {
                 download()
             } catch (e: Exception) {

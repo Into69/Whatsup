@@ -67,7 +67,7 @@ object Places {
         context: Context,
         request: (Geocoder, (List<Address>?) -> Unit) -> Unit,
     ): Address? = withContext(Dispatchers.IO) {
-        if (!Geocoder.isPresent()) return@withContext null
+        if (Http.offline || !Geocoder.isPresent()) return@withContext null
         try {
             suspendCancellableCoroutine { continuation ->
                 request(Geocoder(context)) { addresses ->

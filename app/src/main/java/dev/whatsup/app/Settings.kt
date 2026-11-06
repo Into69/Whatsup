@@ -54,6 +54,10 @@ enum class SatelliteCategory(@StringRes val title: Int, val groups: List<Satelli
 class Settings(context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
+    init {
+        Http.offline = offlineMode
+    }
+
     var tileSet: TileSet
         get() = TileSets.byId(prefs.getString(KEY_TILE_SET, null))
         set(value) = prefs.edit().putString(KEY_TILE_SET, value.id).apply()
@@ -109,6 +113,17 @@ class Settings(context: Context) {
     val activeManualLocation: Place?
         get() = if (useManualLocation) manualLocation else null
 
+    /**
+     * Use only what is saved on the phone: no downloads (orbital data, catalogue, launches, close
+     * approaches, addresses) and map tiles from the cache only.
+     */
+    var offlineMode: Boolean
+        get() = prefs.getBoolean(KEY_OFFLINE_MODE, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_OFFLINE_MODE, value).apply()
+            Http.offline = value
+        }
+
     /** Whether the map's column of buttons is folded away under its toggle. */
     var buttonsHidden: Boolean
         get() = prefs.getBoolean(KEY_BUTTONS_HIDDEN, false)
@@ -136,6 +151,7 @@ class Settings(context: Context) {
         const val KEY_FAVOURITES = "favourites"
         const val KEY_COMPASS_OFFSET = "compassOffset"
         const val KEY_BUTTONS_HIDDEN = "buttonsHidden"
+        const val KEY_OFFLINE_MODE = "offlineMode"
         const val KEY_MANUAL_LAT = "manualLat"
         const val KEY_MANUAL_LON = "manualLon"
         const val KEY_MANUAL_LABEL = "manualLabel"
