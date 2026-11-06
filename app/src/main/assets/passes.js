@@ -201,13 +201,18 @@ function shadowChanges(sat, from) {
 
 // ---- Sun and Moon transits ----
 //
-// A satellite crosses the Sun (or Moon) for an observer on the line from the Sun through the
-// satellite. Where that line meets the ground races along a narrow track, a few km wide: the
-// transit's centre line. Seen from the centre line the satellite crosses the middle of the disc;
-// off it, nearer an edge, until it misses.
+// From the user's location: when the satellite passes in front of the Sun (or Moon), so the Sun is
+// right behind it, and near misses. That happens when the user is on the line from the Sun through
+// the satellite. Where that line meets the ground races along a narrow track, a few km wide: seen
+// from its centre line the satellite crosses the middle of the disc; off it, nearer an edge, until
+// it misses. So the search looks for the track coming close to the user, then checks the view from
+// the user's own spot.
 
-/** How far ahead transits are searched for, and how close their centre line must come to the user. */
-const TRANSIT_DAYS = 7;
+/** How far ahead transits are searched for: from one spot they are rare, a few a year for the ISS. */
+const TRANSIT_DAYS = 30;
+/** Near misses this close (degrees from the disc's edge) are listed too. */
+const NEAR_MISS_DEGREES = 2;
+/** How close the track must come to the user to be looked at: wider than any near miss's. */
 const TRANSIT_SEARCH_KM = 150;
 const TRANSIT_STEP_MS = 10_000;
 /** Below this the Sun or Moon is too low, dim and blurred to watch a transit against. */
@@ -281,12 +286,11 @@ function angleBetween(a, b) {
 }
 
 /**
- * Transits of `sat` across the Sun and Moon whose centre line passes within TRANSIT_SEARCH_KM of
- * (lat, lon) in the next TRANSIT_DAYS from `from`, soonest first (see describeTransit).
+ * Seen from (lat, lon) between `from` and `end` (ms): the times `sat` passes in front of the Sun or
+ * Moon, or misses it by under NEAR_MISS_DEGREES, soonest first (see describeTransit).
  */
-function findTransits(sat, lat, lon, from = simNow()) {
+function findTransits(sat, lat, lon, from, end) {
     const observer = toGlobe(lat, lon, 0);
-    const end = from + TRANSIT_DAYS * 86_400_000;
     // High orbits' tracks move slowly enough for a coarser step.
     const periodMs = 2 * Math.PI / sat.satrec.no * 60_000;
     const step = periodMs < 3 * 3_600_000 ? TRANSIT_STEP_MS : 6 * TRANSIT_STEP_MS;
@@ -341,7 +345,7 @@ function findTransits(sat, lat, lon, from = simNow()) {
                     if ((offset(c) ?? Infinity) < (offset(d) ?? Infinity)) b = d; else a = c;
                 }
                 const transit = describeTransit(sat, kind, (a + b) / 2, observer);
-                if (transit && transit.centreKm <= TRANSIT_SEARCH_KM) found.push(transit);
+                if (transit && transit.separation - transit.radius < NEAR_MISS_DEGREES) found.push(transit);
             }
             t += step;
         }
@@ -367,7 +371,7 @@ function describeTransit(sat, kind, t, observer) {
     const radius = sourceRadius(source, observer) * 180 / Math.PI;
     // From here, when the satellite is closest to the disc's middle, and how close.
     let separation = Infinity, closest = t;
-    for (let dt = -3000; dt <= 3000; dt += 25) {
+    for (let dt = -6000; dt <= 6000; dt += 25) {
         const at = new Date(t + dt);
         const s2 = satelliteGlobe(sat.satrec, at);
         if (!s2) continue;

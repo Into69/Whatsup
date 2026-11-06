@@ -417,38 +417,59 @@ function toggleTransits(sat) {
         list.append(el('div', 'sheet-line', 'Transits need your location.'));
         return;
     }
-    list.append(el('div', 'sheet-line', `Looking for Sun and Moon transits in the next ${TRANSIT_DAYS} days…`));
-    // Let the message paint before the second or so of calculation.
-    setTimeout(() => {
+    // A day at a time, so the app stays responsive and the user sees it getting on.
+    const [lon, lat] = here;
+    const from = simNow();
+    const found = [];
+    const status = el('div', 'sheet-line');
+    list.append(status);
+    let day = 0;
+    const next = () => {
         if (sheet.sat !== sat || !sheet.transitsOpen) return;
+        if (day === TRANSIT_DAYS) {
+            list.replaceChildren(...transitRows(sat, found));
+            return;
+        }
+        status.textContent = `Looking for when ${sat.name} passes in front of the Sun or Moon from here… day ${day + 1} of ${TRANSIT_DAYS}` +
+            (found.length ? ` (${found.length} found)` : '');
         try {
-            list.replaceChildren(...transitRows(sat, findTransits(sat, here[1], here[0])));
+            found.push(...findTransits(sat, lat, lon, from + day * 86_400_000, from + (day + 1) * 86_400_000));
         } catch (e) {
             console.error('Finding transits failed', e);
             list.replaceChildren(el('div', 'sheet-line', "Couldn't work out transits for this satellite."));
+            return;
         }
-    }, 30);
+        day++;
+        setTimeout(next, 0);
+    };
+    // Let the message paint first.
+    setTimeout(next, 30);
 }
 
 function transitRows(sat, transits) {
     if (!transits.length) {
-        return [el('div', 'sheet-line', `No Sun or Moon transits with a track within ${TRANSIT_SEARCH_KM} km of you in the next ${TRANSIT_DAYS} days.`)];
+        return [el('div', 'sheet-line',
+            `From here, ${sat.name} doesn't pass in front of the Sun or Moon, or within ${NEAR_MISS_DEGREES}° of them, in the next ${TRANSIT_DAYS} days. ` +
+            'From one spot that is rare: a few times a year for the ISS.')];
     }
     const day = t => new Date(t).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
     const time = t => new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     return [
         el('div', 'sheet-line sheet-hint',
-            `Next ${TRANSIT_DAYS} days, tracks within ${TRANSIT_SEARCH_KM} km. ✓ crosses the disc from right here. Tap one to see its track. ` +
+            `From your location, the next ${TRANSIT_DAYS} days. ✓ passes in front of the disc; the rest come within ${NEAR_MISS_DEGREES}°. ` +
+            'Tap one to see the strip of ground it is seen from. Times far ahead can shift by seconds: check again nearer the day. ' +
             'Never look at the Sun without a proper solar filter.'),
         ...transits.map(transit => {
-            const body = transit.kind === 'sun' ? '☀ Sun' : '☾ Moon';
+            const name = transit.kind === 'sun' ? 'Sun' : 'Moon';
+            const icon = transit.kind === 'sun' ? '☀' : '☾';
             const row = el('button', 'pass transit' + (transit.visibleHere ? ' visible' : ''));
             const where = transit.visibleHere
-                ? `✓ From here: ${transit.durationS.toFixed(2)} s across the disc, ${Math.round(transit.separation / transit.radius * 100)}% of the way out from its middle`
-                : `Track ${transit.centreKm < 1 ? 'right here' : `${Math.round(transit.centreKm)} km ${compass(transit.centreBearing)}`} of you, ` +
-                  `seen up to ${transit.halfWidthKm.toFixed(1)} km either side of it`;
+                ? `✓ In front of the ${name} for ${transit.durationS.toFixed(2)} s, ${Math.round(transit.separation / transit.radius * 100)}% of the way out from its middle` +
+                  (transit.centreKm >= 1 ? ` (longest ${Math.round(transit.centreKm)} km ${compass(transit.centreBearing)} of you)` : '')
+                : `Misses the ${name} by ${(transit.separation - transit.radius).toFixed(2)}° ` +
+                  `(it crosses ${Math.round(transit.centreKm)} km ${compass(transit.centreBearing)} of you)`;
             row.append(
-                el('span', 'pass-when', `${body} transit · ${day(transit.t)} ${time(transit.t)}`),
+                el('span', 'pass-when', `${icon} ${transit.visibleHere ? `${name} transit` : 'Near miss'} · ${day(transit.t)} ${time(transit.t)}`),
                 el('span', 'pass-seen', where),
                 el('span', 'pass-what',
                     `${sat.name} ${Math.round(transit.el)}° up in the ${compass(transit.az)}, ${Math.round(transit.rangeKm).toLocaleString()} km away · ` +
