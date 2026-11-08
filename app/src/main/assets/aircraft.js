@@ -8,7 +8,8 @@
 // On the globe they are a symbol layer: a plane icon turned to its track and coloured by altitude
 // (11 km up is next to nothing at globe scale, so they sit on the surface), with a dashed ring
 // marking the radius, and callsigns once zoomed in. Tapping one selects it (selectedAircraft) and
-// panels.js shows its sheet. Sky view, the in-view list and search include them too.
+// panels.js shows its sheet, with its route and track (flight.js). Sky view, the in-view list and
+// search include them too.
 //
 // ADS-B is live, so with the clock moved off now (time travel) the aircraft are hidden.
 
@@ -99,6 +100,7 @@ function setAircraft(data) {
             Object.assign(a, { callsign, registration, type, description, lat, lon, altitudeFt, onGround, speedKt, track, rateFpm, squawk, positionAt });
             a.name = callsign || registration || hex.toUpperCase();
         }
+        if (selectedAircraft) noteFlightPosition(selectedAircraft);
         for (const hex of [...aircraft.keys()]) if (!seen.has(hex)) aircraft.delete(hex);
     }
     if (selectedAircraft && !aircraft.has(selectedAircraft.hex)) selectAircraft(null);
@@ -178,6 +180,7 @@ function moveAircraft() {
         });
     }
     loaded.then(() => map.getSource('aircraft').setData({ type: 'FeatureCollection', features }));
+    drawFlight();
 }
 setInterval(() => { if (aircraft.size) moveAircraft(); }, AIRCRAFT_MOVE_MS);
 
@@ -245,6 +248,7 @@ function selectAircraft(a) {
     selectedBody = null;
     selectedAircraft = a;
     following = false;
+    if (a) loadFlight(a);
     moveAircraft();
     notifySatelliteListeners();
 }
@@ -351,8 +355,10 @@ function buildAircraftSheet(a) {
     const follow = el('button', 'follow', 'Follow');
     follow.addEventListener('click', () => setFollowing(!following));
     buttons.append(follow);
-    node.append(header, el('div', 'sheet-line aircraft-live'), el('div', 'sheet-line aircraft-squawk'),
-        el('div', 'sheet-line sheet-pointing'), el('div', 'sheet-line sheet-hint aircraft-age'), buttons);
+    node.append(header, el('div', 'sheet-line aircraft-airframe'), el('div', 'sheet-line aircraft-route'),
+        el('div', 'sheet-line aircraft-progress'), el('div', 'sheet-line aircraft-live'), el('div', 'sheet-line aircraft-squawk'),
+        el('div', 'sheet-line sheet-pointing'), el('div', 'sheet-line sheet-hint aircraft-age'),
+        el('div', 'sheet-line sheet-hint aircraft-track'), buttons);
     document.body.appendChild(node);
     sheet.node = node;
 }
@@ -381,6 +387,12 @@ function refreshAircraftSheet(a) {
             + `${look.el < 0 ? ' (below the horizon)' : ''} · ${look.rangeKm.toFixed(1)} km away (${look.groundKm.toFixed(1)} km over the ground)`);
     } else {
         text('.sheet-pointing', 'Pointing: waiting for your location…');
+    }
+    const flight = describeFlight(a);
+    for (const part of ['airframe', 'route', 'progress', 'track']) {
+        const line = node.querySelector(`.aircraft-${part}`);
+        line.textContent = flight[part];
+        line.style.display = flight[part] ? '' : 'none';
     }
     const age = Math.max(0, Math.round((Date.now() - a.positionAt) / 1000));
     text('.aircraft-age', `Position ${age} s old, moved on from there · ${air.source === 'receiver' ? 'your receiver' : air.source}`);

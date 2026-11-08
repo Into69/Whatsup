@@ -94,7 +94,7 @@
     <string name="category_summary_none">All off</string>
     <string name="category_summary_all">All on</string>
     <string name="category_toggle_description">Turn all %1$s on or off</string>
-    <string name="about_text">Orbital data, satellite catalogue and close approaches (SOCRATES): CelesTrak. Launches: The Space Devs\' Launch Library 2. Stars: Yale Bright Star Catalogue, via d3-celestial. Positions worked out on this phone with SGP4 (satellite.js). Globe: MapLibre. Aircraft: the adsb.lol (ODbL) and adsb.fi volunteer ADS-B networks. Map tiles: as credited on the map.</string>
+    <string name="about_text">Orbital data, satellite catalogue and close approaches (SOCRATES): CelesTrak. Launches: The Space Devs\' Launch Library 2. Stars: Yale Bright Star Catalogue, via d3-celestial. Positions worked out on this phone with SGP4 (satellite.js). Globe: MapLibre. Aircraft: the adsb.lol (ODbL) and adsb.fi volunteer ADS-B networks; routes and airframes: hexdb.io. Map tiles: as credited on the map.</string>
     <string name="about_version">WhatsUp %1$s</string>
     <string name="layer_footprints">Coverage footprints\nWhere on the ground the selected satellite is above the horizon (and 10° up)</string>
     <string name="layer_planes">Orbital planes\nThe rings the big constellations fly in: Starlink, OneWeb, GNSS and others shown</string>

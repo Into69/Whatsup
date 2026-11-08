@@ -70,6 +70,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     @Volatile
     private var mapShown = false
     private val aircraftFeed = AircraftFeed()
+    private val flightInfo = FlightInfo()
     /** The location set by hand that lastLocation holds, or null while it is the phone's. */
     private var shownManualLocation: Place? = null
     /** The globe flies to the first fix only; later fixes just move the marker. */
@@ -200,6 +201,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     path.startsWith("satcat/") -> path.removePrefix("satcat/").toIntOrNull()?.let(catalog::lookup)
                     // Live aircraft around the location (aircraft.js polls it); off the main thread here.
                     path == "aircraft.json" -> aircraftData()
+                    // A selected aircraft's route, airframe and track (flight/route/BAW83 and so on).
+                    path.startsWith("flight/") -> flightData(path.removePrefix("flight/"))
                     else -> null
                 } ?: return@addPathHandler null
                 WebResourceResponse("application/json", "utf-8", ByteArrayInputStream(data))
@@ -440,6 +443,17 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         val location = lastLocation
         if (!mapShown || location == null || !settings.aircraftShown) return AircraftFeed.error("waiting")
         return aircraftFeed.load(location.latitude, location.longitude, settings.aircraftRadiusNm, settings.aircraftReceiver)
+    }
+
+    /** flight/<kind>/<key>: see FlightInfo. */
+    private fun flightData(path: String): ByteArray? {
+        val (kind, key) = path.split('/', limit = 2).takeIf { it.size == 2 } ?: return null
+        return when (kind) {
+            "route" -> flightInfo.route(key)
+            "airframe" -> flightInfo.airframe(key)
+            "track" -> flightInfo.track(key)
+            else -> null
+        }
     }
 
     /**
