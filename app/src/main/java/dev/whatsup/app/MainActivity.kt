@@ -63,7 +63,13 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private lateinit var tracker: LocationTracker
 
     private var pageReady = false
+    /** Read by the /data/ handler (aircraft) off the main thread too. */
+    @Volatile
     private var lastLocation: Location? = null
+    /** Whether the map is on screen: aircraft are only fetched then, never in the background. */
+    @Volatile
+    private var mapShown = false
+    private val aircraftFeed = AircraftFeed()
     /** The location set by hand that lastLocation holds, or null while it is the phone's. */
     private var shownManualLocation: Place? = null
     /** The globe flies to the first fix only; later fixes just move the marker. */
@@ -191,6 +197,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     path == "launches.json" -> launches.load()
                     // globe.js asks for a tapped satellite's catalogue record; off the main thread here.
                     path.startsWith("satcat/") -> path.removePrefix("satcat/").toIntOrNull()?.let(catalog::lookup)
+                    // Live aircraft around the location (aircraft.js polls it); off the main thread here.
+                    path == "aircraft.json" -> aircraftData()
                     else -> null
                 } ?: return@addPathHandler null
                 WebResourceResponse("application/json", "utf-8", ByteArrayInputStream(data))
@@ -307,6 +315,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     override fun onResume() {
         super.onResume()
+        mapShown = true
         webView.onResume()
         applyCacheMode()
         // Picks up a tile set, satellite groups or layers chosen in SettingsActivity (the location
@@ -320,6 +329,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     }
 
     override fun onPause() {
+        mapShown = false
         sensors.unregisterListener(this)
         webView.onPause()
         super.onPause()
@@ -422,6 +432,13 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     } catch (e: Exception) {
         Log.w(TAG, "No camera field of view", e)
         null
+    }
+
+    /** The aircraft around the location, if the map is showing and there is a location; see AircraftFeed. */
+    private fun aircraftData(): ByteArray {
+        val location = lastLocation
+        if (!mapShown || location == null || !settings.aircraftShown) return AircraftFeed.error("waiting")
+        return aircraftFeed.load(location.latitude, location.longitude, settings.aircraftRadiusNm, settings.aircraftReceiver)
     }
 
     /**

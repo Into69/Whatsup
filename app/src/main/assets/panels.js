@@ -40,7 +40,7 @@ const sheet = {
 };
 
 function updateSheet() {
-    const shown = selected ?? selectedBody;
+    const shown = selected ?? selectedBody ?? selectedAircraft;
     if (shown !== sheet.sat) {
         sheet.node?.remove();
         sheet.node = null;
@@ -60,6 +60,10 @@ function updateSheet() {
 function buildSheet(sat) {
     if (sat.kind) {
         buildBodySheet(sat);
+        return;
+    }
+    if (sat.isAircraft) {
+        buildAircraftSheet(sat);
         return;
     }
     const style = groupStyles[sat.group];
@@ -125,6 +129,10 @@ function refreshSheetLive() {
     const sat = sheet.sat;
     if (sheet.node && sat?.kind) {
         refreshBodySheet(sat.kind);
+        return;
+    }
+    if (sheet.node && sat?.isAircraft) {
+        refreshAircraftSheet(sat);
         return;
     }
     if (!sheet.node || !sat?.now) return;
@@ -665,6 +673,15 @@ function searchRows(query) {
         return rows;
     }
 
+    if (aircraftLive()) {
+        const planes = [...aircraft.values()].filter(a => [a.callsign, a.registration, a.hex, a.type]
+            .some(v => v?.toLowerCase().startsWith(q))).sort((a, b) => a.name.localeCompare(b.name));
+        if (planes.length) {
+            rows.push(el('div', 'search-heading search-heading-all', '✈ Aircraft'),
+                ...planes.slice(0, SEARCH_RESULTS).map(aircraftSearchRow));
+        }
+    }
+
     const matches = [];
     for (const sat of satellites.values()) {
         if (favourites.has(sat.id)) continue;
@@ -673,7 +690,7 @@ function searchRows(query) {
     }
     matches.sort(byRank);
     if (matches.length) {
-        if (starred.length) rows.push(el('div', 'search-heading search-heading-all', 'All satellites'));
+        if (rows.some(row => row.classList.contains('search-heading'))) rows.push(el('div', 'search-heading search-heading-all', 'All satellites'));
         rows.push(...matches.slice(0, SEARCH_RESULTS).map(([, sat]) => searchRow(sat)));
         if (matches.length > SEARCH_RESULTS) rows.push(el('div', 'search-empty', `${matches.length - SEARCH_RESULTS} more; keep typing to narrow it down.`));
     }
@@ -692,6 +709,20 @@ function searchRow(sat) {
         select(sat);
         // In sky view, the view points the way to it instead.
         if (!sky.open) flyToSatellite(sat);
+    });
+    return row;
+}
+
+function aircraftSearchRow(a) {
+    const row = el('button', 'search-result');
+    const swatch = el('span', 'swatch');
+    swatch.style.background = AIRCRAFT_BANDS[aircraftBand(a)].css;
+    row.append(swatch, el('span', '', `✈ ${a.name}`),
+        el('span', 'search-sub', [a.type, a.registration, describeAltitude(a)].filter(Boolean).join(' · ')));
+    row.addEventListener('click', () => {
+        closeSearch();
+        selectAircraft(a);
+        if (!sky.open) flyToAircraft(a);
     });
     return row;
 }
@@ -738,7 +769,7 @@ legend.addEventListener('click', () => {
 
 function updateLegend() {
     const groups = Object.values(groupStyles).filter(g => g.count > 0);
-    legend.style.display = groups.length && !sheet.node ? '' : 'none';
+    legend.style.display = (groups.length || layers.aircraft) && !sheet.node ? '' : 'none';
     legend.replaceChildren();
     if (!legendOpen) {
         // Closed: just the colours, as a hint of what opening it shows.
@@ -748,6 +779,7 @@ function updateLegend() {
             swatch.style.background = g.css;
             dots.append(swatch);
         }
+        if (layers.aircraft) dots.append(el('span', 'legend-plane', '✈'));
         legend.append(dots);
         return;
     }
@@ -758,6 +790,7 @@ function updateLegend() {
         row.append(swatch, el('span', '', g.label), el('span', 'legend-count', g.count.toLocaleString()));
         legend.append(row);
     }
+    if (layers.aircraft) legend.append(...aircraftLegend());
     if (layers.favouritesOnly) legend.append(el('div', 'legend-note', 'Only starred satellites are shown (Settings).'));
     if (groups.some(g => g.lowOrbit)) legend.append(el('div', 'legend-note', 'Low-orbit groups hide when zoomed far out.'));
     if (dataUpdatedAt) {
@@ -765,6 +798,25 @@ function updateLegend() {
         legend.append(el('div', 'legend-note' + (stale ? ' warning' : ''),
             `Orbital data from ${describeAge(dataUpdatedAt)}${stale ? ': offline? Positions drift as it ages.' : ''}`));
     }
+}
+
+/** The legend's aircraft part: how many, from where, and the altitude colours. */
+function aircraftLegend() {
+    const status = !aircraftLive() ? 'Aircraft are live only: hidden while time travelling.'
+        : air.error === 'offline' ? 'Aircraft: none in offline mode.'
+        : air.error === 'unavailable' ? 'Aircraft: no answer from the ADS-B networks; trying again.'
+        : !air.centre ? 'Aircraft: waiting for the first update…'
+        : `${aircraft.size.toLocaleString()} within ${air.radiusNm} NM, from ${air.source === 'receiver' ? 'your receiver' : air.source}`;
+    const nodes = [el('div', 'legend-row legend-heading', '✈ Aircraft by altitude')];
+    for (const band of AIRCRAFT_BANDS) {
+        const row = el('div', 'legend-row');
+        const swatch = el('span', 'swatch');
+        swatch.style.background = band.css;
+        row.append(swatch, el('span', '', band.label));
+        nodes.push(row);
+    }
+    nodes.push(el('div', 'legend-note' + (air.error && air.error !== 'waiting' ? ' warning' : ''), status));
+    return nodes;
 }
 
 function setDataAge(at) {
@@ -802,6 +854,7 @@ function back() {
     else if (sheet.outagesOpen) toggleOutages(sheet.sat);
     else if (sheet.passesOpen) togglePasses(sheet.sat);
     else if (selected) select(null);
+    else if (selectedAircraft) selectAircraft(null);
     else if (selectedBody) selectBody(null);
 }
 

@@ -12,7 +12,12 @@
     <!-- Offline mode: whether to load map tiles from the WebView's cache first. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!--
+        Cleartext HTTP is allowed for the user's own ADS-B receiver (Settings > Aircraft), which on a
+        home network is plain http://. Everything the app itself fetches is HTTPS.
+    -->
     <application
+        android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.WhatsUp">

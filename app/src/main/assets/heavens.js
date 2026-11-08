@@ -522,6 +522,10 @@ function bodyAt(x, y) {
 /** Selects the Sun or Moon (null to clear), in place of any satellite. */
 function selectBody(body) {
     if (selected) select(null);
+    if (selectedAircraft) {
+        selectedAircraft = null;
+        moveAircraft();
+    }
     selectedBody = body;
     following = false;
     notifySatelliteListeners();

@@ -82,6 +82,8 @@ let dotCursor = 0;
 let selected = null;
 /** The Sun or Moon when selected instead of a satellite (heavens.js's BODIES), else null. */
 let selectedBody = null;
+/** The aircraft selected instead (aircraft.js), or null. */
+let selectedAircraft = null;
 /** The other satellite of a close approach the user picked (events.js), shown with the selection. */
 let partner = null;
 /** Catalogue numbers of the satellites the user has starred; panels.js keeps it. */
@@ -203,7 +205,8 @@ function tick() {
         planes = orbitalPlanes(now);
     }
     // Following the Sun or Moon keeps where it is overhead in the middle.
-    const followed = selected?.now ?? (selectedBody && bodySubpoint(selectedBody.kind));
+    const followed = selected?.now ?? (selectedAircraft && aircraftNow(selectedAircraft))
+        ?? (selectedBody && bodySubpoint(selectedBody.kind));
     if (following && followed) {
         map.easeTo({ center: [followed.lon, followed.lat], duration: TICK_MS, easing: t => t });
     }
@@ -324,7 +327,14 @@ map.on('click', e => {
         return;
     }
     const hit = satelliteAt(e.point.x, e.point.y);
-    if (hit !== selected || selectedBody) select(hit);
+    // An aircraft under the tap wins over a satellite further from it.
+    const plane = aircraftAt(e.point.x, e.point.y);
+    const satPoint = hit && screenPoint(hit);
+    if (plane && (!satPoint || plane.distance < Math.hypot(satPoint[0] - e.point.x, satPoint[1] - e.point.y))) {
+        selectAircraft(plane.a);
+        return;
+    }
+    if (hit !== selected || selectedBody || selectedAircraft) select(hit);
 });
 
 /** Selects `sat` (null to clear), stopping any following, and drops a close approach's partner. */
@@ -337,6 +347,10 @@ function select(sat) {
     }
     selected = sat;
     selectedBody = null;
+    if (selectedAircraft) {
+        selectedAircraft = null;
+        moveAircraft();
+    }
     partner = null;
     following = false;
     loaded.then(updateGroundTracks);
@@ -346,7 +360,7 @@ function select(sat) {
 
 /** Keeps the camera on the selected satellite until turned off or the user drags the map. */
 function setFollowing(on) {
-    following = on && !!(selected || selectedBody);
+    following = on && !!(selected || selectedBody || selectedAircraft);
     if (following) tick();
     notifySatelliteListeners();
 }

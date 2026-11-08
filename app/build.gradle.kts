@@ -49,4 +49,6 @@ dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
 
     testImplementation("junit:junit:4.13.2")
+    // The real org.json for AircraftFeedTest; android.jar only has stubs.
+    testImplementation("org.json:json:20240303")
 }

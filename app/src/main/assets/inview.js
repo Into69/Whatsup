@@ -5,7 +5,8 @@
 // highest first and kept up to date while open; tapping one selects it. With only starred
 // satellites shown (layers.favouritesOnly), only those are listed.
 //
-// Az, El and range are exact, as in the selected satellite's sheet (pointingAt, WGS84).
+// Az, El and range are exact, as in the selected satellite's sheet (pointingAt, WGS84). With the
+// aircraft layer on, the aircraft above the horizon get a section of their own.
 
 const IN_VIEW_ROWS = 200;
 const IN_VIEW_REFRESH_MS = 2000;
@@ -75,6 +76,7 @@ function refreshInView() {
         return;
     }
     const all = satellitesInView(here[1], here[0]);
+    const planes = aircraftInView(here[1], here[0]);
     const q = inView.input.value.trim().toLowerCase();
     const shown = q
         ? all.filter(({ sat }) => sat.name.toLowerCase().includes(q) || sat.officialName.toLowerCase().includes(q)
@@ -83,19 +85,25 @@ function refreshInView() {
     const at = Math.abs(simNow() - Date.now()) > 60_000
         ? ` at ${new Date(simNow()).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
         : '';
-    inView.title.textContent = `${all.length.toLocaleString()} in line of sight${at}`
-        + (layers.favouritesOnly ? ' (starred only)' : '');
+    inView.title.textContent = `${all.length.toLocaleString()} satellites${layers.favouritesOnly ? ' (starred only)' : ''}`
+        + (layers.aircraft ? ` and ${planes.length.toLocaleString()} aircraft` : '') + ` in line of sight${at}`;
+    const shownPlanes = q
+        ? planes.filter(({ a }) => [a.callsign, a.registration, a.hex, a.type].some(v => v?.toLowerCase().includes(q)))
+        : planes;
     // Starred ones first, each part highest first; the cap applies to the rest.
     const starred = shown.filter(({ sat }) => favourites.has(sat.id));
     const others = shown.filter(({ sat }) => !favourites.has(sat.id));
     const rows = [];
     if (starred.length) {
         rows.push(el('div', 'search-heading', '★ Starred'), ...starred.map(inViewRow));
-        if (others.length) rows.push(el('div', 'search-heading search-heading-all', 'All in view'));
     }
+    if (shownPlanes.length) {
+        rows.push(el('div', 'search-heading search-heading-all', '✈ Aircraft'), ...shownPlanes.slice(0, IN_VIEW_ROWS).map(inViewAircraftRow));
+    }
+    if (others.length && rows.length) rows.push(el('div', 'search-heading search-heading-all', 'Satellites'));
     rows.push(...others.slice(0, IN_VIEW_ROWS).map(inViewRow));
     if (others.length > IN_VIEW_ROWS) rows.push(el('div', 'search-empty', `${others.length - IN_VIEW_ROWS} more, lower down; filter to find one.`));
-    if (!shown.length) {
+    if (!shown.length && !shownPlanes.length) {
         rows.push(el('div', 'search-empty', q ? 'None in view match.'
             : 'Nothing above the horizon among the satellites shown. More groups can be turned on in Settings.'));
     }
@@ -114,6 +122,21 @@ function inViewRow({ sat, az, el: elevation, rangeKm }) {
         select(sat);
         // In sky view, the view points the way to it instead.
         if (!sky.open) flyToSatellite(sat);
+    });
+    return row;
+}
+
+function inViewAircraftRow({ a, az, el: elevation, rangeKm }) {
+    const row = el('button', 'search-result');
+    const swatch = el('span', 'swatch');
+    swatch.style.background = AIRCRAFT_BANDS[aircraftBand(a)].css;
+    row.append(swatch, el('span', '', `✈ ${a.name}`),
+        el('span', 'search-sub in-view-look',
+            `${compass(az)} ${Math.round(az)}° · El ${elevation.toFixed(1)}° · ${rangeKm.toFixed(rangeKm < 10 ? 1 : 0)} km · ${describeAltitude(a)}`));
+    row.addEventListener('click', () => {
+        closeInView();
+        selectAircraft(a);
+        if (!sky.open) flyToAircraft(a);
     });
     return row;
 }

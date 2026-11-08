@@ -108,6 +108,14 @@
         }
         .search-sub { margin-left: auto; opacity: .55; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
         .search-empty { padding: 10px 6px; opacity: .65; }
+        /* Aircraft callsigns on the globe, zoomed in (aircraft.js). */
+        .aircraft-label {
+            position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none; white-space: nowrap;
+            font-size: 11px; color: #fff; text-shadow: 0 0 3px #000, 0 0 2px #000;
+        }
+        .aircraft-label.selected { font-weight: 700; font-size: 12px; }
+        .legend-plane { font-size: 11px; line-height: 10px; }
+        .legend-heading { margin-top: 6px; font-weight: 600; }
         /* In view (inview.js) reuses the search panel. */
         .in-view-title { padding: 2px 6px 8px; }
         .in-view-look { max-width: 55%; font-variant-numeric: tabular-nums; }
@@ -255,6 +263,7 @@
 <script src="skyview.js"></script>
 <script src="dish.js"></script>
 <script src="events.js"></script>
+<script src="aircraft.js"></script>
 <script src="time.js"></script>
 <script src="panels.js"></script>
 <script src="inview.js"></script>

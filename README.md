@@ -13,6 +13,8 @@ An Android satellite tracker on a 3D globe, centred on where you are.
 - Dish aligner: a guide for pointing a dish at a satellite, with compass calibration on the Sun or Moon.
 - Pass predictions and notifications for the ISS and starred satellites.
 - Time travel from a day back to a week ahead; upcoming launches; close approaches between objects in orbit.
+- In view: a list of everything above your horizon now (line of sight), starred first.
+- Live aircraft from ADS-B within a radius you choose (5–250 NM), from adsb.lol, adsb.fi or your own receiver: on the globe, in sky view, in search and the in-view list, with where to look for each.
 
 ## Building
 
@@ -26,4 +28,4 @@ The APK is written to `app/build/outputs/apk/debug/whatsup.apk`.
 
 ## Data and credits
 
-Orbital data, satellite catalogue and close approaches (SOCRATES): [CelesTrak](https://celestrak.org). Launches: [The Space Devs' Launch Library 2](https://thespacedevs.com). Stars: Yale Bright Star Catalogue, via [d3-celestial](https://github.com/ofrohn/d3-celestial). Orbit propagation: [satellite.js](https://github.com/shashwatak/satellite-js). Globe: [MapLibre GL JS](https://maplibre.org). Map tiles: as credited on the map.
+Orbital data, satellite catalogue and close approaches (SOCRATES): [CelesTrak](https://celestrak.org). Launches: [The Space Devs' Launch Library 2](https://thespacedevs.com). Stars: Yale Bright Star Catalogue, via [d3-celestial](https://github.com/ofrohn/d3-celestial). Orbit propagation: [satellite.js](https://github.com/shashwatak/satellite-js). Globe: [MapLibre GL JS](https://maplibre.org). Aircraft: [adsb.lol](https://adsb.lol) (ODbL) and [adsb.fi](https://adsb.fi) volunteer ADS-B networks. Map tiles: as credited on the map.

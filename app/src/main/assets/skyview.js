@@ -136,6 +136,7 @@ function openSkyView() {
     sky.canvas.addEventListener('click', e => {
         const hit = sky.drawn.find(d => Math.hypot(d.x - e.offsetX, d.y - e.offsetY) < SKY_TAP_RADIUS_PX);
         if (hit?.body) selectBody(hit.body);
+        else if (hit?.aircraft) selectAircraft(hit.aircraft);
         else if (hit) select(hit.sat);
     });
     const close = document.createElement('button');
@@ -387,13 +388,39 @@ function drawSky() {
         sky.drawn.push({ sat: s, x: point[0], y: point[1] });
     }
 
+    drawAircraft(ctx, width, project, onScreen, lat, lon);
+
     const target = trackedTarget(lat, lon);
     if (target) drawTracking(ctx, width, height, project, target);
+}
+
+/** Aircraft above the horizon, as small planes in their altitude colour, labelled once 5° up. */
+function drawAircraft(ctx, width, project, onScreen, lat, lon) {
+    for (const { a, az, el: elevation } of aircraftInView(lat, lon)) {
+        const point = project(direction(az, elevation));
+        if (!onScreen(point)) continue;
+        const isSelected = a === selectedAircraft;
+        ctx.fillStyle = isSelected ? '#fff' : AIRCRAFT_BANDS[aircraftBand(a)].css;
+        ctx.font = `${isSelected ? 20 : 15}px system-ui, sans-serif`;
+        ctx.fillText('✈', point[0], point[1] + 5);
+        ctx.font = '13px system-ui, sans-serif';
+        if (isSelected || elevation >= 5) {
+            ctx.fillStyle = '#fff';
+            const name = `${a.name} · ${describeAltitude(a)}`;
+            const half = ctx.measureText(name).width / 2 + 4;
+            ctx.fillText(name, Math.min(Math.max(point[0], half), width - half), point[1] - 12);
+        }
+        sky.drawn.push({ aircraft: a, x: point[0], y: point[1] });
+    }
 }
 
 /** What sky view is guiding the user to: the selected satellite, Sun or Moon, as { name, dir }. */
 function trackedTarget(lat, lon) {
     if (selected?.now) return { name: selected.name, dir: skyDirection(toGlobe(selected.now.lat, selected.now.lon, selected.now.altKm), lat, lon) };
+    if (selectedAircraft) {
+        const { az, el: elevation } = aircraftLook(selectedAircraft, lat, lon);
+        return { name: selectedAircraft.name, dir: direction(az, elevation) };
+    }
     if (selectedBody?.kind === 'sun') return { name: 'Sun', dir: skyDirection(sun.map(c => c * 1e6), lat, lon) };
     if (selectedBody?.kind === 'moon') return { name: 'Moon', dir: skyDirection(moon.globe, lat, lon) };
     return null;

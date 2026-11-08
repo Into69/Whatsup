@@ -60,6 +60,13 @@
     <string name="section_about">About</string>
     <string name="section_location">Location</string>
     <string name="section_data">Data</string>
+    <string name="section_aircraft">Aircraft</string>
+    <string name="aircraft_shown">Live aircraft (ADS-B)\nAircraft around you as they fly, from the adsb.lol and adsb.fi volunteer networks (or your own receiver below). Tap one for its flight, type, altitude and where to look. Live only: hidden while time travelling</string>
+    <string name="aircraft_radius">Within %1$d NM (%2$d km) of you</string>
+    <string name="aircraft_radius_note">Updated every 10 seconds while the map is on screen, never in the background. A busy area at 250 NM can be over 1,000 aircraft and 20–40 MB of data an hour; 50 NM is usually 50–200.</string>
+    <string name="aircraft_receiver">Your own receiver (optional)</string>
+    <string name="aircraft_receiver_hint">http://192.168.1.20/tar1090/data/aircraft.json</string>
+    <string name="aircraft_receiver_note">The address of aircraft.json on a readsb, dump1090 or tar1090 receiver on your network: used first, with no data limits, and the public networks if it doesn\'t answer. Leave empty to use only the public networks.</string>
     <string name="offline_mode">Offline mode\nUse only what is saved on this phone: no downloads of orbital data, launches, close approaches or satellite details, and map tiles only from the cache (places you have already viewed). Turn off to update</string>
     <string name="manual_location_not_found_offline">Couldn\'t find \"%1$s\". Offline mode is on, so addresses can\'t be looked up: use latitude and longitude (53.55, -113.5) or MGRS (12U VD 41533 41226), or turn offline mode off.</string>
     <string name="manual_location">Set my location manually</string>
@@ -87,7 +94,7 @@
     <string name="category_summary_none">All off</string>
     <string name="category_summary_all">All on</string>
     <string name="category_toggle_description">Turn all %1$s on or off</string>
-    <string name="about_text">Orbital data, satellite catalogue and close approaches (SOCRATES): CelesTrak. Launches: The Space Devs\' Launch Library 2. Stars: Yale Bright Star Catalogue, via d3-celestial. Positions worked out on this phone with SGP4 (satellite.js). Globe: MapLibre. Map tiles: as credited on the map.</string>
+    <string name="about_text">Orbital data, satellite catalogue and close approaches (SOCRATES): CelesTrak. Launches: The Space Devs\' Launch Library 2. Stars: Yale Bright Star Catalogue, via d3-celestial. Positions worked out on this phone with SGP4 (satellite.js). Globe: MapLibre. Aircraft: the adsb.lol (ODbL) and adsb.fi volunteer ADS-B networks. Map tiles: as credited on the map.</string>
     <string name="about_version">WhatsUp %1$s</string>
     <string name="layer_footprints">Coverage footprints\nWhere on the ground the selected satellite is above the horizon (and 10° up)</string>
     <string name="layer_planes">Orbital planes\nThe rings the big constellations fly in: Starlink, OneWeb, GNSS and others shown</string>

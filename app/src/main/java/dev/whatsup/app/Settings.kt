@@ -138,9 +138,25 @@ class Settings(context: Context) {
         get() = prefs.getFloat(KEY_COMPASS_OFFSET, 0f)
         set(value) = prefs.edit().putFloat(KEY_COMPASS_OFFSET, value).apply()
 
+    /** Live aircraft from ADS-B (AircraftFeed), shown as a layer of their own. */
+    var aircraftShown: Boolean
+        get() = prefs.getBoolean(KEY_AIRCRAFT, false)
+        set(value) = prefs.edit().putBoolean(KEY_AIRCRAFT, value).apply()
+
+    /** How far around the location to show aircraft, in nautical miles. */
+    var aircraftRadiusNm: Int
+        get() = prefs.getInt(KEY_AIRCRAFT_RADIUS, AircraftFeed.DEFAULT_RADIUS_NM)
+        set(value) = prefs.edit().putInt(KEY_AIRCRAFT_RADIUS, value).apply()
+
+    /** The address of the user's own ADS-B receiver's aircraft.json, or "" to use the public networks. */
+    var aircraftReceiver: String
+        get() = prefs.getString(KEY_AIRCRAFT_RECEIVER, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_AIRCRAFT_RECEIVER, value.trim()).apply()
+
     /** The shape globe.setLayers() takes: each layer's key to whether it is shown. */
     fun layersJson(): JSONObject = JSONObject().apply {
         for (layer in DisplayLayer.entries) put(layer.key, isShown(layer))
+        put("aircraft", aircraftShown)
     }
 
     private companion object {
@@ -153,6 +169,9 @@ class Settings(context: Context) {
         const val KEY_COMPASS_OFFSET = "compassOffset"
         const val KEY_BUTTONS_HIDDEN = "buttonsHidden"
         const val KEY_OFFLINE_MODE = "offlineMode"
+        const val KEY_AIRCRAFT = "showAircraft"
+        const val KEY_AIRCRAFT_RADIUS = "aircraftRadiusNm"
+        const val KEY_AIRCRAFT_RECEIVER = "aircraftReceiver"
         const val KEY_MANUAL_LAT = "manualLat"
         const val KEY_MANUAL_LON = "manualLon"
         const val KEY_MANUAL_LABEL = "manualLabel"

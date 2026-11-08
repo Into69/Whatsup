@@ -16,6 +16,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
@@ -58,6 +59,7 @@ class SettingsActivity : ComponentActivity() {
         addMapStyles()
         addSatellites()
         addDisplay()
+        addAircraft()
         addAlerts()
         addAbout()
     }
@@ -291,6 +293,77 @@ class SettingsActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Live aircraft (AircraftFeed): on or off, how far around the location, and optionally the
+     * user's own receiver.
+     */
+    private fun addAircraft() {
+        addSectionHeader(R.drawable.ic_aircraft, R.string.section_aircraft)
+        val card = addCard()
+        val (title, description) = splitTitle(getString(R.string.aircraft_shown))
+        addSwitchRow(card, title, description, settings.aircraftShown) { settings.aircraftShown = it }
+        addDivider(card)
+
+        val radius = TextView(this)
+        radius.setTextColor(getColor(android.R.color.white))
+        radius.textSize = 15f
+        radius.setPadding(dp(16), dp(12), dp(16), 0)
+        val usage = TextView(this)
+        usage.setTextColor(getColor(R.color.text_secondary))
+        usage.textSize = 13f
+        usage.setPadding(dp(16), 0, dp(16), dp(12))
+        val slider = android.widget.SeekBar(this)
+        // In steps of 5 NM.
+        slider.max = (AircraftFeed.MAX_RADIUS_NM - AircraftFeed.MIN_RADIUS_NM) / RADIUS_STEP_NM
+        slider.progress = (settings.aircraftRadiusNm - AircraftFeed.MIN_RADIUS_NM) / RADIUS_STEP_NM
+        slider.progressTintList = ColorStateList.valueOf(getColor(R.color.accent))
+        slider.thumbTintList = ColorStateList.valueOf(getColor(R.color.accent))
+        slider.setPadding(dp(16), dp(8), dp(16), dp(8))
+        val show = { nm: Int ->
+            radius.text = getString(R.string.aircraft_radius, nm, Math.round(nm * 1.852))
+            usage.text = getString(R.string.aircraft_radius_note)
+        }
+        show(settings.aircraftRadiusNm)
+        slider.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: android.widget.SeekBar, progress: Int, fromUser: Boolean) {
+                val nm = AircraftFeed.MIN_RADIUS_NM + progress * RADIUS_STEP_NM
+                settings.aircraftRadiusNm = nm
+                show(nm)
+            }
+            override fun onStartTrackingTouch(bar: android.widget.SeekBar) {}
+            override fun onStopTrackingTouch(bar: android.widget.SeekBar) {}
+        })
+        card.addView(radius)
+        card.addView(slider, LinearLayout.LayoutParams(MATCH, WRAP))
+        card.addView(usage)
+        addDivider(card)
+
+        val receiverTitle = TextView(this)
+        receiverTitle.text = getString(R.string.aircraft_receiver)
+        receiverTitle.setTextColor(getColor(android.R.color.white))
+        receiverTitle.textSize = 15f
+        receiverTitle.setPadding(dp(16), dp(12), dp(16), 0)
+        val receiver = android.widget.EditText(this)
+        receiver.hint = getString(R.string.aircraft_receiver_hint)
+        receiver.setText(settings.aircraftReceiver)
+        receiver.setSingleLine()
+        receiver.textSize = 14f
+        receiver.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+        receiver.setTextColor(getColor(android.R.color.white))
+        receiver.setHintTextColor(getColor(R.color.text_secondary))
+        receiver.backgroundTintList = ColorStateList.valueOf(getColor(R.color.accent))
+        receiver.doAfterTextChanged { settings.aircraftReceiver = it?.toString().orEmpty() }
+        val receiverNote = TextView(this)
+        receiverNote.text = getString(R.string.aircraft_receiver_note)
+        receiverNote.setTextColor(getColor(R.color.text_secondary))
+        receiverNote.textSize = 13f
+        receiverNote.setLineSpacing(0f, 1.2f)
+        receiverNote.setPadding(dp(16), 0, dp(16), dp(14))
+        card.addView(receiverTitle)
+        card.addView(receiver, LinearLayout.LayoutParams(MATCH, WRAP).apply { marginStart = dp(12); marginEnd = dp(12) })
+        card.addView(receiverNote)
+    }
+
     /** Offline mode: the app uses only what it has saved (see Settings.offlineMode). */
     private fun addOffline() {
         addSectionHeader(R.drawable.ic_globe, R.string.section_data)
@@ -406,5 +479,6 @@ class SettingsActivity : ComponentActivity() {
         const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
         const val OPAQUE = 0xFF000000.toInt()
         const val MAX_HEADER_DOTS = 5
+        const val RADIUS_STEP_NM = 5
     }
 }
