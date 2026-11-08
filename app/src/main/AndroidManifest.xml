@@ -14,7 +14,8 @@
 
     <!--
         Cleartext HTTP is allowed for the user's own ADS-B receiver (Settings > Aircraft), which on a
-        home network is plain http://. Everything the app itself fetches is HTTPS.
+        home network is plain http://. Http refuses it for anything but a local address, and the
+        WebView's page is HTTPS, which blocks plain-HTTP content in it.
     -->
     <application
         android:usesCleartextTraffic="true"

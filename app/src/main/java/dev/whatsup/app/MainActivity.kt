@@ -110,6 +110,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     /** True while the page (sky view or the dish aligner) wants the phone's orientation. */
     private var orientationWanted = false
     private var lastOrientationAt = 0L
+    private var lastFieldAt = 0L
 
     /** The page's camera request (sky view), waiting on the user's answer to the app's own. */
     private var pendingCameraRequest: PermissionRequest? = null
@@ -545,7 +546,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private fun startOrientation() {
         val rotation = sensors.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) ?: return
         sensors.registerListener(this, rotation, SensorManager.SENSOR_DELAY_GAME)
-        // Only for its accuracy (onAccuracyChanged), which says when the compass needs calibrating.
+        // For its accuracy (onAccuracyChanged), which says when the compass needs calibrating, and
+        // its strength.
         sensors.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)?.let {
             sensors.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
         }
@@ -557,6 +559,15 @@ class MainActivity : ComponentActivity(), SensorEventListener {
      * estimate of its heading error.
      */
     override fun onSensorChanged(event: SensorEvent) {
+        if (event.sensor.type == Sensor.TYPE_MAGNETIC_FIELD) {
+            // Its strength, which says whether metal or a magnet is near (calibrate.js).
+            val now = SystemClock.uptimeMillis()
+            if (now - lastFieldAt < FIELD_INTERVAL_MS) return
+            lastFieldAt = now
+            val (x, y, z) = event.values
+            runJs("globe.setMagneticField(${Math.sqrt((x * x + y * y + z * z).toDouble())})")
+            return
+        }
         if (event.sensor.type != Sensor.TYPE_ROTATION_VECTOR) return
         val now = SystemClock.uptimeMillis()
         if (now - lastOrientationAt < ORIENTATION_INTERVAL_MS) return
@@ -654,5 +665,6 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         const val QUEUE_NAMES_SHOWN = 3
         /** Sky view gets the phone's orientation at most this often (about 30 times a second). */
         const val ORIENTATION_INTERVAL_MS = 33L
+        const val FIELD_INTERVAL_MS = 250L
     }
 }

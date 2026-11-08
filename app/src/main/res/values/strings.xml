@@ -66,7 +66,7 @@
     <string name="aircraft_radius_note">Updated every 10 seconds while the map is on screen, never in the background. A busy area at 250 NM can be over 1,000 aircraft and 20–40 MB of data an hour; 50 NM is usually 50–200.</string>
     <string name="aircraft_receiver">Your own receiver (optional)</string>
     <string name="aircraft_receiver_hint">http://192.168.1.20/tar1090/data/aircraft.json</string>
-    <string name="aircraft_receiver_note">The address of aircraft.json on a readsb, dump1090 or tar1090 receiver on your network: used first, with no data limits, and the public networks if it doesn\'t answer. Leave empty to use only the public networks.</string>
+    <string name="aircraft_receiver_note">The address of aircraft.json on a readsb, dump1090 or tar1090 receiver on your network (plain http only to a local address): used first, with no data limits, and the public networks if it doesn\'t answer. Leave empty to use only the public networks.</string>
     <string name="offline_mode">Offline mode\nUse only what is saved on this phone: no downloads of orbital data, launches, close approaches or satellite details, and map tiles only from the cache (places you have already viewed). Turn off to update</string>
     <string name="manual_location_not_found_offline">Couldn\'t find \"%1$s\". Offline mode is on, so addresses can\'t be looked up: use latitude and longitude (53.55, -113.5) or MGRS (12U VD 41533 41226), or turn offline mode off.</string>
     <string name="manual_location">Set my location manually</string>

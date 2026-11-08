@@ -678,7 +678,8 @@ function searchRows(query) {
             .some(v => v?.toLowerCase().startsWith(q))).sort((a, b) => a.name.localeCompare(b.name));
         if (planes.length) {
             rows.push(el('div', 'search-heading search-heading-all', '✈ Aircraft'),
-                ...planes.slice(0, SEARCH_RESULTS).map(aircraftSearchRow));
+                ...planes.slice(0, SEARCH_RESULTS).map(a =>
+                    aircraftRow(a, [a.type, a.registration, describeAltitude(a)].filter(Boolean).join(' · '), closeSearch)));
         }
     }
 
@@ -709,20 +710,6 @@ function searchRow(sat) {
         select(sat);
         // In sky view, the view points the way to it instead.
         if (!sky.open) flyToSatellite(sat);
-    });
-    return row;
-}
-
-function aircraftSearchRow(a) {
-    const row = el('button', 'search-result');
-    const swatch = el('span', 'swatch');
-    swatch.style.background = AIRCRAFT_BANDS[aircraftBand(a)].css;
-    row.append(swatch, el('span', '', `✈ ${a.name}`),
-        el('span', 'search-sub', [a.type, a.registration, describeAltitude(a)].filter(Boolean).join(' · ')));
-    row.addEventListener('click', () => {
-        closeSearch();
-        selectAircraft(a);
-        if (!sky.open) flyToAircraft(a);
     });
     return row;
 }
@@ -833,7 +820,7 @@ satelliteListeners.push(updateLegend);
 let overlayOpen = false;
 
 function overlaysChanged() {
-    const open = !!(sheet.node || searchNode || inView.node || sky.open || dish.open || events.node || timeBar.node);
+    const open = !!(sheet.node || searchNode || inView.node || calibration.node || sky.open || dish.open || events.node || timeBar.node);
     if (sheet.node) legend.style.display = 'none'; else updateLegend();
     if (open === overlayOpen) return;
     overlayOpen = open;
@@ -841,11 +828,12 @@ function overlaysChanged() {
 }
 
 /**
- * Closes the topmost panel: search, in view, the dish aligner, events, sky view, the time bar, then the
+ * Closes the topmost panel: compass calibration, search, in view, the dish aligner, events, sky view, the time bar, then the
  * passes list, then the selection.
  */
 function back() {
-    if (searchNode) closeSearch();
+    if (calibration.node) closeCalibration();
+    else if (searchNode) closeSearch();
     else if (inView.node) closeInView();
     else if (dish.open) closeDish();
     else if (events.node) closeEvents();

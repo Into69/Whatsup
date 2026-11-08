@@ -45,6 +45,7 @@ function openDish(sat) {
     wantOrientation('dish', true);
     // Full screen: the map's buttons would only get in the way.
     window.Android?.setMapButtonsHidden(true);
+    compassStatusChanged();
     overlaysChanged();
     requestAnimationFrame(drawDish);
 }
@@ -56,6 +57,7 @@ function closeDish() {
     dish.node = null;
     wantOrientation('dish', false);
     window.Android?.setMapButtonsHidden(false);
+    compassStatusChanged();
     overlaysChanged();
 }
 
@@ -116,7 +118,9 @@ function buildDish(sat) {
     sunButton.addEventListener('click', () => startCalibration('sun'));
     const moonButton = el('button', 'calibrate-moon', 'Calibrate on Moon');
     moonButton.addEventListener('click', () => startCalibration('moon'));
-    calibrate.append(sunButton, moonButton);
+    const figure8 = el('button', '', 'Figure 8');
+    figure8.addEventListener('click', openCalibration);
+    calibrate.append(sunButton, moonButton, figure8);
     const nudge = el('div', 'sheet-buttons');
     for (const [label, change] of [['−1°', -1], ['−0.1°', -0.1], ['+0.1°', 0.1], ['+1°', 1]]) {
         const button = el('button', '', label);
@@ -256,7 +260,7 @@ function drawDish() {
     const accuracy = ['unreliable', 'low', 'medium', 'high'][orientation.status] ?? 'unknown';
     text('.dish-compass', `Accuracy ${accuracy}` +
         (orientation.headingError >= 0 ? `, about ±${Math.round(orientation.headingError)}°` : '') +
-        (orientation.status <= 1 ? '. Wave the phone in a figure 8 to calibrate it.' : ''));
+        (orientation.status <= 1 ? '. Tap Figure 8 to calibrate it.' : ''));
     node.querySelector('.dish-compass').classList.toggle('warning', orientation.status <= 1);
 
     if (!orientation.rotation) {

@@ -49,11 +49,15 @@ function wantOrientation(who, on) {
     if (after !== before) window.Android?.setOrientationUpdates(after);
 }
 
+/** Called with each new orientation (calibrate.js counts the directions the phone has faced). */
+const orientationListeners = [];
+
 /** From MainActivity: SensorManager's rotation matrix, remapped to the screen's orientation. */
 function setOrientation(matrix, headingError = -1) {
     orientation.raw = matrix;
     orientation.headingError = headingError;
     correctOrientation();
+    for (const listener of orientationListeners) listener(matrix);
 }
 
 /** From MainActivity: the declination at the user's location and the saved calibration. */
@@ -66,6 +70,7 @@ function setCompass(declination, offset, located) {
 
 function setCompassStatus(status) {
     orientation.status = status;
+    compassStatusChanged();
 }
 
 /** Degrees added to the sensor's headings to make them true ones. */
@@ -151,8 +156,15 @@ function openSkyView() {
     camera.textContent = '📷';
     camera.setAttribute('aria-label', 'Camera');
     camera.addEventListener('click', toggleCamera);
-    document.body.append(sky.canvas, close, camera);
+    const calibrate = document.createElement('button');
+    calibrate.id = 'sky-calibrate';
+    calibrate.className = 'sky-button';
+    calibrate.textContent = '∞';
+    calibrate.setAttribute('aria-label', 'Calibrate the compass');
+    calibrate.addEventListener('click', openCalibration);
+    document.body.append(sky.canvas, close, camera, calibrate);
     wantOrientation('sky', true);
+    compassStatusChanged();
     overlaysChanged();
     requestAnimationFrame(drawSky);
 }
@@ -164,7 +176,9 @@ function closeSkyView() {
     sky.canvas.remove();
     document.getElementById('sky-close').remove();
     document.getElementById('sky-camera').remove();
+    document.getElementById('sky-calibrate').remove();
     wantOrientation('sky', false);
+    compassStatusChanged();
     overlaysChanged();
 }
 

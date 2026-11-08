@@ -59,6 +59,7 @@ function pollAircraft() {
         .catch(e => {
             console.error('Loading aircraft failed', e);
             air.error = 'unavailable';
+            updateLegend();
         })
         .finally(() => { air.fetching = false; });
 }
@@ -70,10 +71,14 @@ locationListeners.push(() => setTimeout(pollAircraft));
 /** `data` is AircraftFeed's JSON. */
 function setAircraft(data) {
     if (!aircraftLive()) return;
+    // Waiting (map paused, no location yet): keep what there is, ring and all, until it goes stale.
+    const waiting = data.error === 'waiting';
     if (data.error) {
         air.error = data.error;
-        // Waiting (map paused, no location): keep what there is until it goes stale.
-        if (data.error !== 'waiting') aircraft.clear();
+        if (!waiting) {
+            aircraft.clear();
+            air.centre = null;
+        }
     } else {
         air.error = '';
         air.at = data.at;
@@ -81,7 +86,10 @@ function setAircraft(data) {
         air.centre = [data.lon, data.lat];
         air.radiusNm = data.radiusNm;
         const seen = new Set();
+        const oldest = Date.now() - AIRCRAFT_STALE_S * 1000;
         for (const [hex, callsign, registration, type, description, lat, lon, altitudeFt, onGround, speedKt, track, rateFpm, squawk, positionAt] of data.aircraft) {
+            // Times are on this phone's clock (AircraftFeed); one not heard from in a minute is gone.
+            if (positionAt < oldest) continue;
             seen.add(hex);
             let a = aircraft.get(hex);
             if (!a) {
@@ -94,10 +102,12 @@ function setAircraft(data) {
         for (const hex of [...aircraft.keys()]) if (!seen.has(hex)) aircraft.delete(hex);
     }
     if (selectedAircraft && !aircraft.has(selectedAircraft.hex)) selectAircraft(null);
-    loaded.then(() => {
-        map.getSource('aircraft-range').setData(air.centre && !data.error
-            ? accuracyCircle(air.centre[1], air.centre[0], air.radiusNm * NM_KM * 1000) : emptyFeatures());
-    });
+    if (!waiting) {
+        loaded.then(() => {
+            map.getSource('aircraft-range').setData(air.centre
+                ? accuracyCircle(air.centre[1], air.centre[0], air.radiusNm * NM_KM * 1000) : emptyFeatures());
+        });
+    }
     moveAircraft();
     updateLegend();
 }
@@ -137,12 +147,23 @@ function aircraftBand(a) {
     return AIRCRAFT_BANDS.findIndex(band => band.below > ft);
 }
 
-/** Moves every icon on to now; with a selection, its icon is white and drawn on top. */
+/**
+ * Moves every icon on to now; with a selection, its icon is white and drawn on top. Aircraft not
+ * heard from for AIRCRAFT_STALE_S go, from everything (list, sky view, search, sheet), not just
+ * the map.
+ */
 function moveAircraft() {
     const now = Date.now();
+    for (const [hex, a] of aircraft) {
+        if ((now - a.positionAt) / 1000 > AIRCRAFT_STALE_S) aircraft.delete(hex);
+    }
+    if (selectedAircraft && !aircraft.has(selectedAircraft.hex)) {
+        selectedAircraft = null;
+        following = false;
+        notifySatelliteListeners();
+    }
     const features = [];
     for (const a of aircraft.values()) {
-        if ((now - a.positionAt) / 1000 > AIRCRAFT_STALE_S * 2) continue;
         const { lat, lon } = aircraftNow(a, now);
         const isSelected = a === selectedAircraft;
         features.push({
@@ -226,6 +247,23 @@ function selectAircraft(a) {
     following = false;
     moveAircraft();
     notifySatelliteListeners();
+}
+
+/**
+ * A row for the in-view list and search: swatch, "✈ name", then `subtitle`. Tapping it closes
+ * `close` (the panel it is in) and selects the aircraft, flying to it unless in sky view.
+ */
+function aircraftRow(a, subtitle, close, subtitleClass = 'search-sub') {
+    const row = el('button', 'search-result');
+    const swatch = el('span', 'swatch');
+    swatch.style.background = AIRCRAFT_BANDS[aircraftBand(a)].css;
+    row.append(swatch, el('span', '', `✈ ${a.name}`), el('span', subtitleClass, subtitle));
+    row.addEventListener('click', () => {
+        close();
+        selectAircraft(a);
+        if (!sky.open) flyToAircraft(a);
+    });
+    return row;
 }
 
 function flyToAircraft(a) {

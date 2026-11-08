@@ -38,11 +38,18 @@ object Http {
         url: String,
         out: OutputStream,
         readTimeoutMs: Int = 30_000,
+        connectTimeoutMs: Int = CONNECT_TIMEOUT_MS,
+        allowLocalHttp: Boolean = false,
         onProgress: ((Long, Long) -> Unit)? = null,
     ): Long {
         if (offline) throw OfflineException()
-        val connection = URL(url).openConnection() as HttpURLConnection
-        connection.connectTimeout = CONNECT_TIMEOUT_MS
+        val address = URL(url)
+        // The manifest allows cleartext for the user's own ADS-B receiver; this keeps it to that.
+        if (address.protocol != "https" && !(allowLocalHttp && address.protocol == "http" && isLocalHost(address.host))) {
+            throw IOException("Only HTTPS, or HTTP to this network, is allowed: $url")
+        }
+        val connection = address.openConnection() as HttpURLConnection
+        connection.connectTimeout = connectTimeoutMs
         connection.readTimeout = readTimeoutMs
         connection.setRequestProperty("User-Agent", USER_AGENT)
         try {
@@ -76,6 +83,25 @@ object Http {
     }
 
     /** `url`'s whole body. */
-    fun getBytes(url: String, readTimeoutMs: Int = 30_000): ByteArray =
-        ByteArrayOutputStream().also { get(url, it, readTimeoutMs) }.toByteArray()
+    fun getBytes(
+        url: String,
+        readTimeoutMs: Int = 30_000,
+        connectTimeoutMs: Int = CONNECT_TIMEOUT_MS,
+        allowLocalHttp: Boolean = false,
+    ): ByteArray = ByteArrayOutputStream().also { get(url, it, readTimeoutMs, connectTimeoutMs, allowLocalHttp) }.toByteArray()
+
+    /**
+     * Whether `host` is on the local network: a private, link-local or loopback IPv4 address, a
+     * one-word name ("raspberrypi") or a .local, .lan or .home.arpa name.
+     */
+    fun isLocalHost(host: String): Boolean {
+        val name = host.lowercase().trimEnd('.')
+        val octets = name.split('.').map { it.toIntOrNull() }
+        if (octets.size == 4 && octets.all { it != null && it in 0..255 }) {
+            val (a, b) = octets.map { it!! }
+            return a == 10 || a == 127 || (a == 192 && b == 168) || (a == 172 && b in 16..31) || (a == 169 && b == 254)
+        }
+        return name == "localhost" || '.' !in name ||
+            listOf(".local", ".lan", ".home.arpa").any { name.endsWith(it) }
+    }
 }

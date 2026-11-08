@@ -135,7 +135,7 @@ function setSatellites(data) {
     dotCursor = 0;
     selected = selected && satellites.get(selected.id) || null;
     partner = partner && satellites.get(partner.id) || null;
-    if (!selected) following = false;
+    if (!selected && !selectedAircraft && !selectedBody) following = false;
     planesAt = 0;
     showBelt = all.some(sat => BELT_GROUPS.has(sat.group));
     // Place every dot now rather than over the first few seconds of batches.

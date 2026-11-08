@@ -179,6 +179,26 @@
         }
         #sky-camera { top: calc(var(--safe-top) + 50px); font-size: 17px; }
         #sky-camera.on { background: var(--accent); }
+        #sky-calibrate { top: calc(var(--safe-top) + 100px); font-size: 22px; }
+        #sky-calibrate.warning { background: #b45309; }
+
+        /* Compass calibration (calibrate.js), over sky view and the dish aligner. */
+        .calibration {
+            position: absolute; left: 8px; right: 8px; bottom: var(--safe-bottom); z-index: 9;
+            max-height: 85%; overflow-y: auto;
+            background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px;
+        }
+        .calibration-figure { display: block; width: 220px; height: 120px; margin: 4px auto 6px; }
+        .calibration-meter { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, .12); overflow: hidden; margin: 6px 0 2px; }
+        .calibration-meter div { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+        .calibration-accuracy b { padding: 1px 8px; border-radius: 8px; color: #000; }
+        .calibration-done { color: #7cf29c; font-weight: 600; }
+        .calibration-prompt {
+            position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--safe-bottom) + 8px); z-index: 8;
+            display: flex; gap: 10px; align-items: center; white-space: nowrap;
+            background: #b45309; color: #fff; border-radius: 12px; padding: 8px 12px; font-size: 13px;
+        }
+        .calibration-prompt button { background: rgba(0, 0, 0, .25); border: 0; color: #fff; border-radius: 8px; padding: 6px 10px; }
 
         /* Dish aligner (dish.js), over everything. */
         .dish {
@@ -262,6 +282,7 @@
 <script src="passes.js"></script>
 <script src="skyview.js"></script>
 <script src="dish.js"></script>
+<script src="calibrate.js"></script>
 <script src="events.js"></script>
 <script src="aircraft.js"></script>
 <script src="time.js"></script>

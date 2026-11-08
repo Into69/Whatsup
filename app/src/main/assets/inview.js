@@ -127,18 +127,9 @@ function inViewRow({ sat, az, el: elevation, rangeKm }) {
 }
 
 function inViewAircraftRow({ a, az, el: elevation, rangeKm }) {
-    const row = el('button', 'search-result');
-    const swatch = el('span', 'swatch');
-    swatch.style.background = AIRCRAFT_BANDS[aircraftBand(a)].css;
-    row.append(swatch, el('span', '', `✈ ${a.name}`),
-        el('span', 'search-sub in-view-look',
-            `${compass(az)} ${Math.round(az)}° · El ${elevation.toFixed(1)}° · ${rangeKm.toFixed(rangeKm < 10 ? 1 : 0)} km · ${describeAltitude(a)}`));
-    row.addEventListener('click', () => {
-        closeInView();
-        selectAircraft(a);
-        if (!sky.open) flyToAircraft(a);
-    });
-    return row;
+    return aircraftRow(a,
+        `${compass(az)} ${Math.round(az)}° · El ${elevation.toFixed(1)}° · ${rangeKm.toFixed(rangeKm < 10 ? 1 : 0)} km · ${describeAltitude(a)}`,
+        closeInView, 'search-sub in-view-look');
 }
 
 window.globe.openInView = openInView;
