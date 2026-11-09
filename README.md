@@ -2,9 +2,11 @@
 
 A satellite tracker on a 3D globe, centred on where you are, for Android and Windows.
 
-**Android: [download the APK](release/whatsup.apk)** ([direct link](https://github.com/Into69/Whatsup/raw/main/release/whatsup.apk)). It is a debug build: allow installs from unknown sources to install it.
+**Android: [download the APK](https://github.com/Into69/Whatsup/releases/latest/download/whatsup.apk)**. It is a debug build: allow installs from unknown sources to install it.
 
-**Windows 10 and 11: [download WhatsUp.exe](release/WhatsUp.exe)** ([direct link](https://github.com/Into69/Whatsup/raw/main/release/WhatsUp.exe)). One file, nothing to install: run it from anywhere. It isn't signed, so Windows SmartScreen asks first ("More info", then "Run anyway"). It keeps its settings and downloads in `%LOCALAPPDATA%\WhatsUp`.
+**Windows 10 and 11: [download WhatsUp.exe](https://github.com/Into69/Whatsup/releases/latest/download/WhatsUp.exe)**. One file, nothing to install: run it from anywhere. It isn't signed, so Windows SmartScreen asks first ("More info", then "Run anyway"). It keeps its settings and downloads in `%LOCALAPPDATA%\WhatsUp`.
+
+Both are attached to each [release](https://github.com/Into69/Whatsup/releases); the links above always fetch the newest.
 
 ## What it does
 
