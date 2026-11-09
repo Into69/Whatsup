@@ -616,6 +616,9 @@ function openSearch() {
         searchNode.querySelector('input').focus();
         return;
     }
+    // The lists open in the same place.
+    if (inView.node) closeInView();
+    if (events.node) closeEvents();
     searchNode = el('div', 'search');
     const row = el('div', 'search-row');
     const input = el('input');
@@ -754,6 +757,11 @@ legend.addEventListener('click', () => {
     updateLegend();
 });
 
+function closeLegend() {
+    legendOpen = false;
+    updateLegend();
+}
+
 function updateLegend() {
     const groups = Object.values(groupStyles).filter(g => g.count > 0);
     legend.style.display = (groups.length || layers.aircraft) && !sheet.node ? '' : 'none';
@@ -846,7 +854,45 @@ function back() {
     else if (selectedBody) selectBody(null);
 }
 
+// ---- Closing by tapping elsewhere, or the button again ----
+
+/** The panels a tap anywhere else closes, as [node, close]: calibration, the lists and the open legend. */
+function dismissablePanels() {
+    return [
+        [calibration.node, closeCalibration], [searchNode, closeSearch], [inView.node, closeInView],
+        [events.node, closeEvents], [legendOpen ? legend : null, closeLegend],
+    ].filter(([node]) => node);
+}
+
+/**
+ * A tap outside the open panels closes them. On the globe or the sky that is all it does, so a tap
+ * meant to close a list doesn't also select whatever was under it; on other controls it goes on to
+ * them too. Caught on its way down (capture), before MapLibre or sky view see it.
+ */
+document.addEventListener('click', e => {
+    const open = dismissablePanels();
+    if (!open.length || open.some(([node]) => node.contains(e.target))) return;
+    for (const [, close] of open) close();
+    if (e.target === sky.canvas || e.target.closest?.('.maplibregl-canvas-container')) e.stopPropagation();
+}, true);
+
+/** For MainActivity's buttons: each opens its list, or closes it if it is open. */
+function toggleSearch() {
+    if (searchNode) closeSearch(); else openSearch();
+}
+
+function toggleInView() {
+    if (inView.node) closeInView(); else openInView();
+}
+
+function toggleEvents() {
+    if (events.node) closeEvents(); else openEvents();
+}
+
 window.globe.openSearch = openSearch;
+window.globe.toggleSearch = toggleSearch;
+window.globe.toggleInView = toggleInView;
+window.globe.toggleEvents = toggleEvents;
 window.globe.back = back;
 window.globe.setFavourites = setFavourites;
 window.globe.setDataAge = setDataAge;

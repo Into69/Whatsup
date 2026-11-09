@@ -222,6 +222,8 @@ function openSkyView() {
         if (hit?.body) selectBody(hit.body);
         else if (hit?.aircraft) selectAircraft(hit.aircraft);
         else if (hit) select(hit.sat);
+        // Empty sky closes the info sheet, as empty space on the globe does.
+        else if (selected || selectedAircraft || selectedBody) select(null);
     });
     const close = document.createElement('button');
     close.id = 'sky-close';

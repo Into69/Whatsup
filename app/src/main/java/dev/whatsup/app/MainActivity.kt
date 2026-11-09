@@ -177,9 +177,9 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         findViewById<View>(R.id.settings_button).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        findViewById<View>(R.id.search_button).setOnClickListener { runJs("globe.openSearch()") }
+        findViewById<View>(R.id.search_button).setOnClickListener { runJs("globe.toggleSearch()") }
         findViewById<View>(R.id.sky_button).setOnClickListener { runJs("globe.toggleSkyView()") }
-        findViewById<View>(R.id.in_view_button).setOnClickListener { runJs("globe.openInView()") }
+        findViewById<View>(R.id.in_view_button).setOnClickListener { runJs("globe.toggleInView()") }
         val night = findViewById<View>(R.id.night_button)
         showNightVision(night)
         night.setOnClickListener {
@@ -187,7 +187,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             showNightVision(night)
         }
         findViewById<View>(R.id.time_button).setOnClickListener { runJs("globe.toggleTimeBar()") }
-        findViewById<View>(R.id.events_button).setOnClickListener { runJs("globe.openEvents()") }
+        findViewById<View>(R.id.events_button).setOnClickListener { runJs("globe.toggleEvents()") }
         findViewById<View>(R.id.recentre_button).setOnClickListener {
             if (lastLocation == null) {
                 Toast.makeText(this, R.string.no_location_yet, Toast.LENGTH_SHORT).show()

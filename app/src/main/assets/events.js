@@ -36,6 +36,9 @@ function openEvents(tab) {
         renderEvents();
         return;
     }
+    // The lists open in the same place.
+    closeSearch();
+    if (inView.node) closeInView();
     events.node = el('div', 'events');
     document.body.appendChild(events.node);
     if (Date.now() - events.launchesAt > LAUNCH_REFRESH_MS) loadLaunches();
