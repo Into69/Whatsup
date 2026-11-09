@@ -219,10 +219,10 @@ function openSkyView() {
     sky.canvas.id = 'sky';
     sky.canvas.addEventListener('click', e => {
         const hit = sky.drawn.find(d => Math.hypot(d.x - e.offsetX, d.y - e.offsetY) < SKY_TAP_RADIUS_PX);
-        if (hit?.body) selectBody(hit.body);
-        else if (hit?.aircraft) selectAircraft(hit.aircraft);
-        else if (hit) select(hit.sat);
-        // Empty sky closes the info sheet, as empty space on the globe does.
+        // As on the globe: what is already selected, or empty sky, closes the info sheet.
+        if (hit?.body) selectBody(hit.body === selectedBody ? null : hit.body);
+        else if (hit?.aircraft) selectAircraft(hit.aircraft === selectedAircraft ? null : hit.aircraft);
+        else if (hit) select(hit.sat === selected ? null : hit.sat);
         else if (selected || selectedAircraft || selectedBody) select(null);
     });
     const close = document.createElement('button');
@@ -242,6 +242,7 @@ function openSkyView() {
     calibrate.className = 'sky-button';
     calibrate.textContent = '∞';
     calibrate.setAttribute('aria-label', 'Calibrate the compass');
+    calibrate.dataset.opens = 'calibration';
     calibrate.addEventListener('click', openCalibration);
     document.body.append(sky.canvas, close, camera, calibrate);
     wantOrientation('sky', true);

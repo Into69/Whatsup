@@ -120,6 +120,7 @@ function buildDish(sat) {
     moonButton.addEventListener('click', () => startCalibration('moon'));
     const figure8 = el('button', '', 'Figure 8');
     figure8.addEventListener('click', openCalibration);
+    figure8.dataset.opens = 'calibration';
     calibrate.append(sunButton, moonButton, figure8);
     const nudge = el('div', 'sheet-buttons');
     for (const [label, change] of [['−1°', -1], ['−0.1°', -0.1], ['+0.1°', 0.1], ['+1°', 1]]) {

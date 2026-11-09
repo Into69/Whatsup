@@ -320,10 +320,11 @@ function toGlobe(lat, lon, altKm) {
 
 // ---- Selection ----
 
+/** A tap on the globe selects what is under it; on what is already selected, or on nothing, it closes the info sheet. */
 map.on('click', e => {
     const body = bodyAt(e.point.x, e.point.y);
     if (body) {
-        selectBody(body);
+        selectBody(body === selectedBody ? null : body);
         return;
     }
     const hit = satelliteAt(e.point.x, e.point.y);
@@ -331,10 +332,11 @@ map.on('click', e => {
     const plane = aircraftAt(e.point.x, e.point.y);
     const satPoint = hit && screenPoint(hit);
     if (plane && (!satPoint || plane.distance < Math.hypot(satPoint[0] - e.point.x, satPoint[1] - e.point.y))) {
-        selectAircraft(plane.a);
+        selectAircraft(plane.a === selectedAircraft ? null : plane.a);
         return;
     }
-    if (hit !== selected || selectedBody || selectedAircraft) select(hit);
+    if (hit && hit === selected) select(null);
+    else if (hit !== selected || selectedBody || selectedAircraft) select(hit);
 });
 
 /** Selects `sat` (null to clear), stopping any following, and drops a close approach's partner. */

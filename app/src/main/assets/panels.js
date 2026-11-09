@@ -836,8 +836,8 @@ function overlaysChanged() {
 }
 
 /**
- * Closes the topmost panel: compass calibration, search, in view, the dish aligner, events, sky view, the time bar, then the
- * passes list, then the selection.
+ * Closes the topmost panel: compass calibration, search, in view, the dish aligner, events, sky view, the time bar, the open
+ * legend, then the passes list, then the selection.
  */
 function back() {
     if (calibration.node) closeCalibration();
@@ -847,6 +847,7 @@ function back() {
     else if (events.node) closeEvents();
     else if (sky.open) closeSkyView();
     else if (timeBar.node) closeTimeBar();
+    else if (legendOpen) closeLegend();
     else if (sheet.outagesOpen) toggleOutages(sheet.sat);
     else if (sheet.passesOpen) togglePasses(sheet.sat);
     else if (selected) select(null);
@@ -855,44 +856,72 @@ function back() {
 }
 
 // ---- Closing by tapping elsewhere, or the button again ----
+//
+// The same everywhere: a panel's own button closes it again; a tap anywhere outside it closes it
+// (a tap on the globe or the sky doing nothing else, so it doesn't select what was under it); the
+// back button closes the topmost (back()). Selecting what is already selected closes its sheet.
+// Sky view and the dish aligner fill the screen, so they close by their button, × or back.
 
-/** The panels a tap anywhere else closes, as [node, close]: calibration, the lists and the open legend. */
+/** The panels a tap anywhere else closes, as [name, node, close]. */
 function dismissablePanels() {
     return [
-        [calibration.node, closeCalibration], [searchNode, closeSearch], [inView.node, closeInView],
-        [events.node, closeEvents], [legendOpen ? legend : null, closeLegend],
-    ].filter(([node]) => node);
+        ['calibration', calibration.node, closeCalibration], ['search', searchNode, closeSearch],
+        ['inView', inView.node, closeInView], ['events', events.node, closeEvents],
+        ['time', timeBar.node, closeTimeBar], ['legend', legendOpen ? legend : null, closeLegend],
+    ].filter(([, node]) => node);
+}
+
+/** Closes the panels a tap elsewhere would, all but `except` (a name from dismissablePanels). */
+function closePanels(except) {
+    for (const [name, , close] of dismissablePanels()) if (name !== except) close();
 }
 
 /**
- * A tap outside the open panels closes them. On the globe or the sky that is all it does, so a tap
- * meant to close a list doesn't also select whatever was under it; on other controls it goes on to
- * them too. Caught on its way down (capture), before MapLibre or sky view see it.
+ * A tap outside the open panels closes them. On the globe or the sky that is all it does; on other
+ * controls it goes on to them too, except on the button that opened a panel just closed (marked
+ * data-opens="<name>"), which would only open it again. Caught on its way down (capture), before
+ * MapLibre, sky view or the button see it.
  */
 document.addEventListener('click', e => {
     const open = dismissablePanels();
-    if (!open.length || open.some(([node]) => node.contains(e.target))) return;
-    for (const [, close] of open) close();
-    if (e.target === sky.canvas || e.target.closest?.('.maplibregl-canvas-container')) e.stopPropagation();
+    if (!open.length || open.some(([, node]) => node.contains(e.target))) return;
+    for (const [, , close] of open) close();
+    const opener = e.target.closest?.('[data-opens]')?.dataset.opens;
+    if (e.target === sky.canvas || e.target.closest?.('.maplibregl-canvas-container') || open.some(([name]) => name === opener)) {
+        e.stopPropagation();
+    }
 }, true);
 
-/** For MainActivity's buttons: each opens its list, or closes it if it is open. */
+/** For MainActivity's buttons: each opens its panel, closing the others as a tap elsewhere would, or closes it if open. */
 function toggleSearch() {
-    if (searchNode) closeSearch(); else openSearch();
+    if (searchNode) closeSearch();
+    else {
+        closePanels('search');
+        openSearch();
+    }
 }
 
 function toggleInView() {
-    if (inView.node) closeInView(); else openInView();
+    if (inView.node) closeInView();
+    else {
+        closePanels('inView');
+        openInView();
+    }
 }
 
 function toggleEvents() {
-    if (events.node) closeEvents(); else openEvents();
+    if (events.node) closeEvents();
+    else {
+        closePanels('events');
+        openEvents();
+    }
 }
 
 window.globe.openSearch = openSearch;
 window.globe.toggleSearch = toggleSearch;
 window.globe.toggleInView = toggleInView;
 window.globe.toggleEvents = toggleEvents;
+window.globe.closePanels = closePanels;
 window.globe.back = back;
 window.globe.setFavourites = setFavourites;
 window.globe.setDataAge = setDataAge;
