@@ -6,7 +6,8 @@
 // satellites shown (layers.favouritesOnly), only those are listed.
 //
 // Az, El and range are exact, as in the selected satellite's sheet (pointingAt, WGS84). With the
-// aircraft layer on, the aircraft above the horizon get a section of their own.
+// aircraft layer on, the aircraft above the horizon get a section of their own. Those the terrain
+// hides (skyline.js) are listed last, apart.
 
 const IN_VIEW_ROWS = 200;
 const IN_VIEW_REFRESH_MS = 2000;
@@ -37,6 +38,7 @@ function openInView() {
     inView.list = el('div', 'search-results');
     inView.node.append(inView.title, row, inView.list);
     document.body.appendChild(inView.node);
+    loadSkyline();
     refreshInView();
     inView.timer = setInterval(refreshInView, IN_VIEW_REFRESH_MS);
     overlaysChanged();
@@ -75,21 +77,24 @@ function refreshInView() {
         inView.list.replaceChildren();
         return;
     }
-    const all = satellitesInView(here[1], here[0]);
-    const planes = aircraftInView(here[1], here[0]);
+    // What the terrain hides (skyline.js) goes in a part of its own at the end.
+    const hides = ({ az, el: elevation }, rangeKm) => behindTerrain(az, elevation, rangeKm);
+    const visible = satellitesInView(here[1], here[0]);
+    const all = visible.filter(v => !hides(v));
+    const planesUp = aircraftInView(here[1], here[0]);
+    const planes = planesUp.filter(p => !hides(p, p.rangeKm));
+    const hidden = [...visible.filter(v => hides(v)), ...planesUp.filter(p => hides(p, p.rangeKm))];
     const q = inView.input.value.trim().toLowerCase();
-    const shown = q
-        ? all.filter(({ sat }) => sat.name.toLowerCase().includes(q) || sat.officialName.toLowerCase().includes(q)
-            || String(sat.id).startsWith(q) || sat.objectId?.toLowerCase().startsWith(q))
-        : all;
+    const shown = q ? all.filter(({ sat }) => satelliteMatches(sat, q)) : all;
     const at = Math.abs(simNow() - Date.now()) > 60_000
         ? ` at ${new Date(simNow()).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
         : '';
     inView.title.textContent = `${all.length.toLocaleString()} satellites${layers.favouritesOnly ? ' (starred only)' : ''}`
-        + (layers.aircraft ? ` and ${planes.length.toLocaleString()} aircraft` : '') + ` in line of sight${at}`;
-    const shownPlanes = q
-        ? planes.filter(({ a }) => [a.callsign, a.registration, a.hex, a.type].some(v => v?.toLowerCase().includes(q)))
-        : planes;
+        + (layers.aircraft ? ` and ${planes.length.toLocaleString()} aircraft` : '') + ` in line of sight${at}`
+        + (hidden.length ? `; ${hidden.length.toLocaleString()} more behind the terrain` : '');
+    const terrain = describeSkyline();
+    if (terrain) inView.title.textContent += `. ${terrain}`;
+    const shownPlanes = q ? planes.filter(({ a }) => aircraftMatches(a, q)) : planes;
     // Starred ones first, each part highest first; the cap applies to the rest.
     const starred = shown.filter(({ sat }) => favourites.has(sat.id));
     const others = shown.filter(({ sat }) => !favourites.has(sat.id));
@@ -103,11 +108,26 @@ function refreshInView() {
     if (others.length && rows.length) rows.push(el('div', 'search-heading search-heading-all', 'Satellites'));
     rows.push(...others.slice(0, IN_VIEW_ROWS).map(inViewRow));
     if (others.length > IN_VIEW_ROWS) rows.push(el('div', 'search-empty', `${others.length - IN_VIEW_ROWS} more, lower down; filter to find one.`));
+    const shownHidden = q ? hidden.filter(h => (h.sat ? satelliteMatches(h.sat, q) : aircraftMatches(h.a, q))) : hidden;
+    if (shownHidden.length) {
+        rows.push(el('div', 'search-heading search-heading-all', '⛰ Behind the terrain'),
+            ...shownHidden.slice(0, IN_VIEW_ROWS).map(h => (h.sat ? inViewRow(h) : inViewAircraftRow(h))));
+    }
     if (!shown.length && !shownPlanes.length) {
         rows.push(el('div', 'search-empty', q ? 'None in view match.'
             : 'Nothing above the horizon among the satellites shown. More groups can be turned on in Settings.'));
     }
     inView.list.replaceChildren(...rows);
+}
+
+/** Whether the filter `q` (lower case) matches a satellite's name, number or designator. */
+function satelliteMatches(sat, q) {
+    return sat.name.toLowerCase().includes(q) || sat.officialName.toLowerCase().includes(q)
+        || String(sat.id).startsWith(q) || sat.objectId?.toLowerCase().startsWith(q);
+}
+
+function aircraftMatches(a, q) {
+    return [a.callsign, a.registration, a.hex, a.type].some(v => v?.toLowerCase().includes(q));
 }
 
 function inViewRow({ sat, az, el: elevation, rangeKm }) {

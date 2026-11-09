@@ -18,6 +18,7 @@ enum class DisplayLayer(val key: String, @StringRes val title: Int, val shownByD
     DAY_NIGHT("dayNight", R.string.layer_day_night),
     STARS("stars", R.string.layer_stars),
     CONSTELLATIONS("constellations", R.string.layer_constellations, shownByDefault = false),
+    SKYLINE("skyline", R.string.layer_skyline),
     TRUE_SCALE("trueScale", R.string.layer_true_scale, shownByDefault = false),
 }
 

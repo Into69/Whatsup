@@ -71,6 +71,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private var mapShown = false
     private val aircraftFeed = AircraftFeed()
     private val flightInfo = FlightInfo()
+    private val skyline by lazy { Skyline(this) }
     /** The location set by hand that lastLocation holds, or null while it is the phone's. */
     private var shownManualLocation: Place? = null
     /** The globe flies to the first fix only; later fixes just move the marker. */
@@ -209,6 +210,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     path == "aircraft.json" -> aircraftData()
                     // A selected aircraft's route, airframe and track (flight/route/BAW83 and so on).
                     path.startsWith("flight/") -> flightData(path.removePrefix("flight/"))
+                    // The terrain's skyline round a place (skyline/53.5461,-113.4938), for sky view.
+                    path.startsWith("skyline/") -> skylineData(path.removePrefix("skyline/"))
                     else -> null
                 } ?: return@addPathHandler null
                 WebResourceResponse("application/json", "utf-8", ByteArrayInputStream(data))
@@ -467,6 +470,12 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             "track" -> flightInfo.track(key)
             else -> null
         }
+    }
+
+    private fun skylineData(place: String): ByteArray? {
+        val (lat, lon) = place.split(',').mapNotNull { it.toDoubleOrNull() }.takeIf { it.size == 2 } ?: return null
+        if (lat !in -85.0..85.0 || lon !in -180.0..180.0) return null
+        return skyline.load(lat, lon)
     }
 
     /**

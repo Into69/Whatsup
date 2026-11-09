@@ -243,6 +243,7 @@ function openSkyView() {
     calibrate.addEventListener('click', openCalibration);
     document.body.append(sky.canvas, close, camera, calibrate);
     wantOrientation('sky', true);
+    loadSkyline();
     compassStatusChanged();
     overlaysChanged();
     requestAnimationFrame(drawSky);
@@ -391,6 +392,8 @@ const GROUND_NEAR = '#1b222b', GROUND_FAR = '#07090c';
 /** How far above the horizon its faint glow reaches, px. */
 const HORIZON_GLOW_PX = 60;
 const CONSTELLATION_COLOR = 'rgba(140, 170, 255, 0.35)';
+/** Satellites and aircraft behind the terrain (skyline.js): faint, and not labelled. */
+const HIDDEN_OPACITY = 0.3;
 /** Which labels win where they would overlap (placeSkyLabels): the highest first. */
 const LABEL_PRIORITY = {
     tracked: 100, body: 90, compass: 80, starred: 70, planet: 60, satellite: 50, aircraft: 45,
@@ -475,6 +478,8 @@ function drawSky() {
         drawPlanets(ctx, project, onScreen, labels);
         drawMoon(ctx, project, lat, lon, focal, labels);
     }
+    // Over the Sun, Moon and planets, which can set behind it; under what flies.
+    drawSkyline(ctx, project, camera);
 
     for (const { sat: s, dir, sunlit } of sky.visible) {
         const point = project(dir);
@@ -482,7 +487,9 @@ function drawSky() {
         const style = groupStyles[s.group];
         const isSelected = s === selected;
         const starred = favourites.has(s.id);
-        ctx.globalAlpha = sunlit ? 1 : SHADOW_OPACITY + 0.2;
+        const [az, elevation] = azEl(dir);
+        const hidden = behindTerrain(az, elevation);
+        ctx.globalAlpha = hidden ? HIDDEN_OPACITY : sunlit ? 1 : SHADOW_OPACITY + 0.2;
         ctx.fillStyle = isSelected ? '#fff' : style.css;
         ctx.beginPath();
         ctx.arc(point[0], point[1], isSelected ? 6 : style.featured || starred ? 5 : 3, 0, 2 * Math.PI);
@@ -492,7 +499,7 @@ function drawSky() {
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.stroke();
         ctx.globalAlpha = 1;
-        if (style.featured || isSelected || starred || FRIENDLY_NAMES[s.id]) {
+        if (isSelected || (!hidden && (style.featured || starred || FRIENDLY_NAMES[s.id]))) {
             labels.push({
                 text: (starred ? '★ ' : '') + s.name, x: point[0], y: point[1] - 10, alt: point[1] + 20,
                 priority: isSelected ? LABEL_PRIORITY.tracked : starred ? LABEL_PRIORITY.starred : LABEL_PRIORITY.satellite,
@@ -646,10 +653,12 @@ function drawPlanets(ctx, project, onScreen, labels) {
 
 /** Aircraft above the horizon, as small planes in their altitude colour, labelled once 5° up. */
 function drawAircraft(ctx, project, onScreen, lat, lon, labels) {
-    for (const { a, az, el: elevation } of aircraftInView(lat, lon)) {
+    for (const { a, az, el: elevation, rangeKm } of aircraftInView(lat, lon)) {
         const point = project(direction(az, elevation));
         if (!onScreen(point)) continue;
         const isSelected = a === selectedAircraft;
+        const hidden = behindTerrain(az, elevation, rangeKm);
+        ctx.globalAlpha = hidden ? HIDDEN_OPACITY : 1;
         ctx.font = `${isSelected ? 20 : 15}px system-ui, sans-serif`;
         ctx.lineWidth = 2.5;
         ctx.lineJoin = 'round';
@@ -657,7 +666,8 @@ function drawAircraft(ctx, project, onScreen, lat, lon, labels) {
         ctx.strokeText('✈', point[0], point[1] + 5);
         ctx.fillStyle = isSelected ? '#fff' : AIRCRAFT_BANDS[aircraftBand(a)].css;
         ctx.fillText('✈', point[0], point[1] + 5);
-        if (isSelected || elevation >= 5) {
+        ctx.globalAlpha = 1;
+        if (isSelected || (!hidden && elevation >= 5)) {
             labels.push({
                 text: `${a.name} · ${describeAltitude(a)}`, x: point[0], y: point[1] - 12, alt: point[1] + 24,
                 priority: isSelected ? LABEL_PRIORITY.tracked : LABEL_PRIORITY.aircraft, clamp: true,
@@ -701,12 +711,12 @@ function placeSkyLabels(ctx, labels, width) {
     ctx.font = '13px system-ui, sans-serif';
 }
 
-/** What sky view is guiding the user to: the selected satellite, Sun or Moon, as { name, dir }. */
+/** What sky view is guiding the user to: the selected satellite, aircraft, Sun or Moon, as { name, dir, rangeKm? }. */
 function trackedTarget(lat, lon) {
     if (selected?.now) return { name: selected.name, dir: skyDirection(toGlobe(selected.now.lat, selected.now.lon, selected.now.altKm), lat, lon) };
     if (selectedAircraft) {
-        const { az, el: elevation } = aircraftLook(selectedAircraft, lat, lon);
-        return { name: selectedAircraft.name, dir: direction(az, elevation) };
+        const { az, el: elevation, rangeKm } = aircraftLook(selectedAircraft, lat, lon);
+        return { name: selectedAircraft.name, dir: direction(az, elevation), rangeKm };
     }
     if (selectedBody?.kind === 'sun') return { name: 'Sun', dir: skyDirection(sun.map(c => c * 1e6), lat, lon) };
     if (selectedBody?.kind === 'moon') return { name: 'Moon', dir: skyDirection(moon.globe, lat, lon) };
@@ -810,7 +820,7 @@ function drawMoon(ctx, project, lat, lon, focal, labels) {
  * otherwise an arrow at the screen's edge pointing the way to turn, and a line at the top saying
  * where to look.
  */
-function drawTracking(ctx, width, height, project, { name, dir }) {
+function drawTracking(ctx, width, height, project, { name, dir, rangeKm }) {
     const [az, el] = azEl(dir);
     const point = project(dir);
     // The status line sits level with the close button, below the status bar.
@@ -856,7 +866,7 @@ function drawTracking(ctx, width, height, project, { name, dir }) {
 
     const where = el < 0
         ? `below the horizon (${Math.round(el)}°), towards ${compass(az)}`
-        : `${compass(az)} ${Math.round(az)}°, ${Math.round(el)}° up`;
+        : `${compass(az)} ${Math.round(az)}°, ${Math.round(el)}° up` + (behindTerrain(az, el, rangeKm) ? ', behind the terrain' : '');
     const text = `${name}: ${where}`;
     ctx.font = '600 14px system-ui, sans-serif';
     const w = Math.min(ctx.measureText(text).width + 24, width - 120);
