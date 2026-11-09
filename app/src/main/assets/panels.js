@@ -92,7 +92,7 @@ function buildSheet(sat) {
     follow.addEventListener('click', () => setFollowing(!following));
     const passes = el('button', 'passes-button', 'Passes');
     passes.addEventListener('click', () => togglePasses(sat));
-    const align = el('button', '', 'Align dish');
+    const align = el('button', 'align-button', 'Align dish');
     align.addEventListener('click', () => openDish(sat));
     buttons.append(follow, passes);
     // Sun outages only happen to satellites that stay put in the sky.

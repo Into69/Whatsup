@@ -4,3 +4,7 @@
 build/
 local.properties
 *.iml
+# The Windows app's build output
+windows/**/bin/
+windows/**/obj/
+windows/publish/

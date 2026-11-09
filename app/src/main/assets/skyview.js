@@ -199,6 +199,8 @@ const sky = {
     video: null,
     /** The camera's field of view (degrees) across its long and short sides, from MainActivity. */
     cameraFov: null,
+    /** Field of view across the shorter side without the camera; the Windows app zooms it with the mouse wheel. */
+    fov: SKY_FOV_DEGREES,
     /** Satellites above the horizon: { sat, dir: [east, north, up] unit vector, sunlit }. */
     visible: [],
     /** Stars above the horizon: { dir, size, color, name }. */
@@ -327,7 +329,7 @@ function skyFocal(width, height) {
         const videoFocal = Math.max(vw, vh) / 2 / Math.tan(fovLong / 2);
         return videoFocal * Math.max(width / vw, height / vh);
     }
-    return Math.min(width, height) / 2 / Math.tan(SKY_FOV_DEGREES / 2 * Math.PI / 180);
+    return Math.min(width, height) / 2 / Math.tan(sky.fov / 2 * Math.PI / 180);
 }
 
 // ---- What is up ----
