@@ -50,23 +50,12 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
-                    <ImageButton
-                        android:id="@+id/settings_button"
-                        style="@style/MapButton.Stacked"
-                        android:contentDescription="@string/settings"
-                        android:src="@drawable/ic_settings" />
-
+                    <!-- Most used first, related ones together; Settings, a screen of its own, last. -->
                     <ImageButton
                         android:id="@+id/search_button"
                         style="@style/MapButton.Stacked"
                         android:contentDescription="@string/search"
                         android:src="@drawable/ic_search" />
-
-                    <ImageButton
-                        android:id="@+id/sky_button"
-                        style="@style/MapButton.Stacked"
-                        android:contentDescription="@string/sky_view"
-                        android:src="@drawable/ic_sky" />
 
                     <ImageButton
                         android:id="@+id/in_view_button"
@@ -75,10 +64,10 @@
                         android:src="@drawable/ic_in_view" />
 
                     <ImageButton
-                        android:id="@+id/night_button"
+                        android:id="@+id/sky_button"
                         style="@style/MapButton.Stacked"
-                        android:contentDescription="@string/night_vision_off"
-                        android:src="@drawable/ic_night" />
+                        android:contentDescription="@string/sky_view"
+                        android:src="@drawable/ic_sky" />
 
                     <ImageButton
                         android:id="@+id/time_button"
@@ -97,6 +86,18 @@
                         style="@style/MapButton.Stacked"
                         android:contentDescription="@string/recentre"
                         android:src="@drawable/ic_my_location" />
+
+                    <ImageButton
+                        android:id="@+id/night_button"
+                        style="@style/MapButton.Stacked"
+                        android:contentDescription="@string/night_vision_off"
+                        android:src="@drawable/ic_night" />
+
+                    <ImageButton
+                        android:id="@+id/settings_button"
+                        style="@style/MapButton.Stacked"
+                        android:contentDescription="@string/settings"
+                        android:src="@drawable/ic_settings" />
                 </LinearLayout>
             </LinearLayout>
         </ScrollView>
