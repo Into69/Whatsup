@@ -17,6 +17,7 @@ enum class DisplayLayer(val key: String, @StringRes val title: Int, val shownByD
     MY_LOCATION("myLocation", R.string.layer_my_location),
     DAY_NIGHT("dayNight", R.string.layer_day_night),
     STARS("stars", R.string.layer_stars),
+    CONSTELLATIONS("constellations", R.string.layer_constellations, shownByDefault = false),
     TRUE_SCALE("trueScale", R.string.layer_true_scale, shownByDefault = false),
 }
 
@@ -126,6 +127,11 @@ class Settings(context: Context) {
         }
 
     /** Whether the map's column of buttons is folded away under its toggle. */
+    /** Red night mode (NightVision), for keeping the eyes dark-adapted outside. */
+    var nightVision: Boolean
+        get() = prefs.getBoolean(KEY_NIGHT_VISION, false)
+        set(value) = prefs.edit().putBoolean(KEY_NIGHT_VISION, value).apply()
+
     var buttonsHidden: Boolean
         get() = prefs.getBoolean(KEY_BUTTONS_HIDDEN, false)
         set(value) = prefs.edit().putBoolean(KEY_BUTTONS_HIDDEN, value).apply()
@@ -168,6 +174,7 @@ class Settings(context: Context) {
         const val KEY_FAVOURITES = "favourites"
         const val KEY_COMPASS_OFFSET = "compassOffset"
         const val KEY_BUTTONS_HIDDEN = "buttonsHidden"
+        const val KEY_NIGHT_VISION = "nightVision"
         const val KEY_OFFLINE_MODE = "offlineMode"
         const val KEY_AIRCRAFT = "showAircraft"
         const val KEY_AIRCRAFT_RADIUS = "aircraftRadiusNm"

@@ -75,6 +75,12 @@
                         android:src="@drawable/ic_in_view" />
 
                     <ImageButton
+                        android:id="@+id/night_button"
+                        style="@style/MapButton.Stacked"
+                        android:contentDescription="@string/night_vision_off"
+                        android:src="@drawable/ic_night" />
+
+                    <ImageButton
                         android:id="@+id/time_button"
                         style="@style/MapButton.Stacked"
                         android:contentDescription="@string/time_travel"

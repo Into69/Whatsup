@@ -46,6 +46,7 @@ class SettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
         settings = Settings(this)
+        NightVision.apply(this, settings.nightVision)
         content = findViewById(R.id.content)
         findViewById<View>(R.id.back).setOnClickListener { finish() }
 

@@ -179,6 +179,12 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         findViewById<View>(R.id.search_button).setOnClickListener { runJs("globe.openSearch()") }
         findViewById<View>(R.id.sky_button).setOnClickListener { runJs("globe.toggleSkyView()") }
         findViewById<View>(R.id.in_view_button).setOnClickListener { runJs("globe.openInView()") }
+        val night = findViewById<View>(R.id.night_button)
+        showNightVision(night)
+        night.setOnClickListener {
+            settings.nightVision = !settings.nightVision
+            showNightVision(night)
+        }
         findViewById<View>(R.id.time_button).setOnClickListener { runJs("globe.toggleTimeBar()") }
         findViewById<View>(R.id.events_button).setOnClickListener { runJs("globe.openEvents()") }
         findViewById<View>(R.id.recentre_button).setOnClickListener {
@@ -354,6 +360,13 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         findViewById<View>(R.id.map_buttons).visibility = if (shown) View.VISIBLE else View.GONE
         toggle.rotation = if (shown) 180f else 0f
         toggle.contentDescription = getString(if (shown) R.string.hide_buttons else R.string.show_buttons)
+    }
+
+    /** Red night mode on or off as set; the whole screen says which, so the button only says so to TalkBack. */
+    private fun showNightVision(button: View) {
+        val on = settings.nightVision
+        NightVision.apply(this, on)
+        button.contentDescription = getString(if (on) R.string.night_vision_on else R.string.night_vision_off)
     }
 
     private fun pushTileSet() {

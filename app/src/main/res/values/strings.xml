@@ -94,12 +94,13 @@
     <string name="category_summary_none">All off</string>
     <string name="category_summary_all">All on</string>
     <string name="category_toggle_description">Turn all %1$s on or off</string>
-    <string name="about_text">Orbital data, satellite catalogue and close approaches (SOCRATES): CelesTrak. Launches: The Space Devs\' Launch Library 2. Stars: Yale Bright Star Catalogue, via d3-celestial. Positions worked out on this phone with SGP4 (satellite.js). Globe: MapLibre. Aircraft: the adsb.lol (ODbL) and adsb.fi volunteer ADS-B networks; routes and airframes: hexdb.io. Map tiles: as credited on the map.</string>
+    <string name="about_text">Orbital data, satellite catalogue and close approaches (SOCRATES): CelesTrak. Launches: The Space Devs\' Launch Library 2. Stars and constellations: Yale Bright Star Catalogue, via d3-celestial. Planets: Paul Schlyter\'s orbital elements. Positions worked out on this phone with SGP4 (satellite.js). Globe: MapLibre. Aircraft: the adsb.lol (ODbL) and adsb.fi volunteer ADS-B networks; routes and airframes: hexdb.io. Map tiles: as credited on the map.</string>
     <string name="about_version">WhatsUp %1$s</string>
     <string name="layer_footprints">Coverage footprints\nWhere on the ground the selected satellite is above the horizon (and 10° up)</string>
     <string name="layer_planes">Orbital planes\nThe rings the big constellations fly in: Starlink, OneWeb, GNSS and others shown</string>
     <string name="layer_launches">Launches\nUpcoming launches at their launch pads, from Launch Library</string>
-    <string name="layer_stars">Stars, Sun and Moon\nThe real night sky behind the globe and in sky view; the Sun and Moon (tap them for rise, set and phases)</string>
+    <string name="layer_stars">Stars, planets, Sun and Moon\nThe real night sky behind the globe and in sky view, with the planets in sky view; the Sun and Moon (tap them for rise, set and phases)</string>
+    <string name="layer_constellations">Constellations\nTheir stick figures and names in sky view</string>
     <string name="layer_true_scale">True-scale Sun and Moon\nDraw them at their real size, however small, on the globe and in sky view. Sky view always does over the camera</string>
     <string name="favourite_alerts">Starred satellites\' passes\nA notification 5 minutes before each pass over 10° of a satellite you\'ve starred (★ in its info)</string>
     <string name="favourite_alert_title">%1$s passes in 5 minutes</string>
@@ -114,5 +115,7 @@
     <string name="downloads_next">Next: %1$s</string>
     <string name="downloads_next_more">Next: %1$s, and %2$d more</string>
     <string name="hide_buttons">Hide buttons</string>
+    <string name="night_vision_on">Red night mode: on</string>
+    <string name="night_vision_off">Red night mode: off</string>
     <string name="show_buttons">Show buttons</string>
 </resources>

@@ -218,6 +218,7 @@ function finishCalibration() {
 function drawDish() {
     if (!dish.open) return;
     requestAnimationFrame(drawDish);
+    stepOrientation();
     const now = Date.now();
     if (now - dish.refreshedAt < DISH_REFRESH_MS) return;
     dish.refreshedAt = now;

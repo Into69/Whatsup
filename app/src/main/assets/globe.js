@@ -108,6 +108,7 @@ let here = null;
 const layers = {
     orbits: true, groundTracks: true, altitudeLines: true, footprints: true, planes: false, geoBelt: true,
     launches: true, myLocation: true, dayNight: true, stars: true, trueScale: false, favouritesOnly: false,
+    constellations: false,
     aircraft: false,
 };
 const layerListeners = [applyLocationLayer];

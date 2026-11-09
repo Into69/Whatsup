@@ -39,13 +39,23 @@ const orientation = {
     located: false,
     /** Who wants readings ('sky', 'dish'); MainActivity reads the sensor while anyone does. */
     users: new Set(),
+    /** The latest corrected reading; `rotation` follows it smoothly (stepOrientation). */
+    target: null,
+    steppedAt: 0,
 };
+
+/**
+ * How quickly the drawn orientation catches up with the sensor's: the time constant (s) for a still
+ * hand, where the sensor's jitter is all there is to follow, shrinking as the turn grows past
+ * SMOOTH_FAST_DEGREES so real movement isn't left behind.
+ */
+const SMOOTH_SECONDS = 0.15, SMOOTH_FAST_DEGREES = 3;
 
 function wantOrientation(who, on) {
     const before = orientation.users.size > 0;
     if (on) orientation.users.add(who); else orientation.users.delete(who);
     const after = orientation.users.size > 0;
-    if (after && !before) orientation.raw = orientation.rotation = null;
+    if (after && !before) orientation.raw = orientation.rotation = orientation.target = null;
     if (after !== before) window.Android?.setOrientationUpdates(after);
 }
 
@@ -85,11 +95,76 @@ function correctOrientation() {
     const c = headingCorrection() * Math.PI / 180;
     const cos = Math.cos(c), sin = Math.sin(c);
     // World vectors turned so azimuths grow by c: east' = east cos c + north sin c, and so on.
-    orientation.rotation = [
+    orientation.target = [
         cos * r[0] + sin * r[3], cos * r[1] + sin * r[4], cos * r[2] + sin * r[5],
         -sin * r[0] + cos * r[3], -sin * r[1] + cos * r[4], -sin * r[2] + cos * r[5],
         r[6], r[7], r[8],
     ];
+    if (!orientation.rotation) orientation.rotation = orientation.target;
+}
+
+/** Moves the drawn orientation on towards the sensor's; sky view and the dish aligner call it each frame. */
+function stepOrientation() {
+    const target = orientation.target;
+    if (!target) return;
+    const now = performance.now();
+    const seconds = Math.min((now - orientation.steppedAt) / 1000, 0.25);
+    orientation.steppedAt = now;
+    if (!orientation.rotation || orientation.rotation === target) {
+        orientation.rotation = target;
+        return;
+    }
+    const from = matrixToQuaternion(orientation.rotation), to = matrixToQuaternion(target);
+    const degrees = 2 * Math.acos(Math.min(1, Math.abs(from.reduce((sum, c, i) => sum + c * to[i], 0)))) * 180 / Math.PI;
+    const tau = SMOOTH_SECONDS / (1 + degrees / SMOOTH_FAST_DEGREES);
+    orientation.rotation = quaternionToMatrix(slerp(from, to, 1 - Math.exp(-seconds / tau)));
+}
+
+/** Unit quaternion [w, x, y, z] of a row-major rotation matrix. */
+function matrixToQuaternion([m00, m01, m02, m10, m11, m12, m20, m21, m22]) {
+    const trace = m00 + m11 + m22;
+    let q;
+    if (trace > 0) {
+        const s = 2 * Math.sqrt(trace + 1);
+        q = [0.25 * s, (m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s];
+    } else if (m00 > m11 && m00 > m22) {
+        const s = 2 * Math.sqrt(1 + m00 - m11 - m22);
+        q = [(m21 - m12) / s, 0.25 * s, (m01 + m10) / s, (m02 + m20) / s];
+    } else if (m11 > m22) {
+        const s = 2 * Math.sqrt(1 + m11 - m00 - m22);
+        q = [(m02 - m20) / s, (m01 + m10) / s, 0.25 * s, (m12 + m21) / s];
+    } else {
+        const s = 2 * Math.sqrt(1 + m22 - m00 - m11);
+        q = [(m10 - m01) / s, (m02 + m20) / s, (m12 + m21) / s, 0.25 * s];
+    }
+    const length = Math.hypot(...q);
+    return q.map(c => c / length);
+}
+
+function quaternionToMatrix([w, x, y, z]) {
+    return [
+        1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w),
+        2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w),
+        2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y),
+    ];
+}
+
+/** The rotation a share t of the way from quaternion a to b, the short way round. */
+function slerp(a, b, t) {
+    let cos = a.reduce((sum, c, i) => sum + c * b[i], 0);
+    if (cos < 0) {
+        b = b.map(c => -c);
+        cos = -cos;
+    }
+    let wa = 1 - t, wb = t;
+    if (cos < 0.9995) {
+        const angle = Math.acos(cos), sin = Math.sin(angle);
+        wa = Math.sin((1 - t) * angle) / sin;
+        wb = Math.sin(t * angle) / sin;
+    }
+    const q = a.map((c, i) => wa * c + wb * b[i]);
+    const length = Math.hypot(...q);
+    return q.map(c => c / length);
 }
 
 /** Device coordinates (x right, y up the screen, z out of the screen) of a world (east, north, up) vector. */
@@ -128,6 +203,10 @@ const sky = {
     visible: [],
     /** Stars above the horizon: { dir, size, color, name }. */
     stars: [],
+    /** The planets: { name, dir, mag, color }. */
+    planets: [],
+    /** With layers.constellations: { name, dir, lines: [[dir, ...]] }, directions east/north/up. */
+    constellations: [],
     visibleAt: 0,
     /** Where each satellite was drawn in the last frame, for taps. */
     drawn: [],
@@ -267,6 +346,8 @@ function updateVisible() {
     sky.visibleAt = Date.now();
     sky.visible = [];
     sky.stars = [];
+    sky.planets = [];
+    sky.constellations = [];
     if (!here) return;
     const [lon, lat] = here;
     for (const s of satellites.values()) {
@@ -275,22 +356,51 @@ function updateVisible() {
         const dir = skyDirection(p, lat, lon);
         if (dir[2] > 0) sky.visible.push({ sat: s, dir, sunlit: !inShadow(p, sun) });
     }
+    const date = new Date(simNow());
+    const gmst = satellite.gstime(date);
+    const skyAt = (ra, dec) => skyDirection(eciToGlobe(raDecToEci(ra, dec), gmst).map(c => c * 1e6), lat, lon);
+    if (layers.constellations) {
+        for (const [name, [ra, dec], strokes] of CONSTELLATIONS) {
+            const lines = strokes.map(flat => {
+                const line = [];
+                for (let i = 0; i < flat.length; i += 2) line.push(skyAt(flat[i], flat[i + 1]));
+                return line;
+            });
+            // Any of it above the horizon.
+            if (lines.some(line => line.some(dir => dir[2] > 0))) sky.constellations.push({ name, dir: skyAt(ra, dec), lines });
+        }
+    }
     if (!layers.stars) return;
-    const gmst = satellite.gstime(new Date(simNow()));
     for (const [ra, dec, mag, bv, name] of STARS) {
         // Brightest first, so the rest are fainter still.
         if (mag > SKY_STAR_MAGNITUDE) break;
-        const far = eciToGlobe(raDecToEci(ra, dec), gmst).map(c => c * 1e6);
-        const dir = skyDirection(far, lat, lon);
+        const dir = skyAt(ra, dec);
         if (dir[2] < -0.05) continue;
         const [r, g, b] = starColor(bv).map(c => Math.round(c * 255));
         sky.stars.push({ dir, size: starSize(mag) / 2 + 0.3, color: `rgba(${r}, ${g}, ${b}, ${starAlpha(mag)})`, name });
     }
+    for (const planet of planetsAt(date)) {
+        const dir = skyAt(planet.ra, planet.dec);
+        if (dir[2] > 0) sky.planets.push({ ...planet, dir });
+    }
 }
+
+/** The sky without the camera, and the ground under the horizon, lighter by it and darker further down. */
+const SKY_BACKGROUND = '#05070d';
+const GROUND_NEAR = '#1b222b', GROUND_FAR = '#07090c';
+/** How far above the horizon its faint glow reaches, px. */
+const HORIZON_GLOW_PX = 60;
+const CONSTELLATION_COLOR = 'rgba(140, 170, 255, 0.35)';
+/** Which labels win where they would overlap (placeSkyLabels): the highest first. */
+const LABEL_PRIORITY = {
+    tracked: 100, body: 90, compass: 80, starred: 70, planet: 60, satellite: 50, aircraft: 45,
+    geo: 30, star: 20, constellation: 10, degrees: 5,
+};
 
 function drawSky() {
     if (!sky.open) return;
     requestAnimationFrame(drawSky);
+    stepOrientation();
     const canvas = sky.canvas;
     const ratio = window.devicePixelRatio || 1;
     const width = canvas.clientWidth, height = canvas.clientHeight;
@@ -301,12 +411,9 @@ function drawSky() {
     const ctx = canvas.getContext('2d');
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     // Over the camera, only a light tint so the drawing stands out.
-    if (sky.video?.videoWidth) {
-        ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-    } else {
-        ctx.fillStyle = '#05070d';
-    }
+    const camera = !!sky.video?.videoWidth;
+    if (camera) ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = camera ? 'rgba(0, 0, 0, 0.2)' : SKY_BACKGROUND;
     ctx.fillRect(0, 0, width, height);
     ctx.font = '13px system-ui, sans-serif';
     ctx.textAlign = 'center';
@@ -331,8 +438,11 @@ function drawSky() {
         return [width / 2 + focal * x / -z, height / 2 - focal * y / -z];
     };
     const onScreen = point => point && point[0] > -20 && point[1] > -20 && point[0] < width + 20 && point[1] < height + 20;
+    /** Every label, drawn last by placeSkyLabels so the most important get the room. */
+    const labels = [];
 
-    // Stars first, under everything else.
+    // The constellations and stars first, so the ground hides those that have set.
+    if (layers.constellations) drawConstellations(ctx, project, labels);
     for (const star of sky.stars) {
         const point = project(star.dir);
         if (!onScreen(point)) continue;
@@ -340,32 +450,15 @@ function drawSky() {
         ctx.beginPath();
         ctx.arc(point[0], point[1], star.size, 0, 2 * Math.PI);
         ctx.fill();
-        if (star.name) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
-            ctx.font = '11px system-ui, sans-serif';
-            ctx.fillText(star.name, point[0], point[1] + 14);
-            ctx.font = '13px system-ui, sans-serif';
+        if (star.name && star.dir[2] > 0) {
+            labels.push({ text: star.name, x: point[0], y: point[1] + 14, priority: LABEL_PRIORITY.star, size: 11, color: 'rgba(255, 255, 255, 0.6)' });
         }
     }
-
-    // The horizon, and faint circles 30° and 60° up.
-    ctx.strokeStyle = 'rgba(110, 231, 255, 0.5)';
-    ctx.lineWidth = 1.5;
-    traceCurve(ctx, 0, 360, 3, az => project(direction(az, 0)));
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-    ctx.lineWidth = 1;
-    for (const el of [30, 60]) traceCurve(ctx, 0, 360, 3, az => project(direction(az, el)));
-
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-    ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].forEach((label, i) => {
-        const point = project(direction(i * 45, 0));
-        if (point) ctx.fillText(label, point[0], point[1] - 8);
-    });
-    const zenith = project([0, 0, 1]);
-    if (zenith) ctx.fillText('Overhead', zenith[0], zenith[1] - 8);
+    drawGround(ctx, width, height, focal, camera);
+    drawHorizon(ctx, project, labels);
 
     const [lon, lat] = here;
-    drawGeoArc(ctx, project, lat, lon);
+    drawGeoArc(ctx, project, lat, lon, labels);
 
     const sunPoint = project(skyDirection(sun.map(c => c * 1e6), lat, lon));
     if (sunPoint) {
@@ -375,10 +468,13 @@ function drawSky() {
         ctx.arc(sunPoint[0], sunPoint[1], radius, 0, 2 * Math.PI);
         ctx.fill();
         markSmall(ctx, sunPoint, radius, '#ffd166');
-        ctx.fillText('Sun', sunPoint[0], sunPoint[1] - Math.max(radius, SMALL_BODY_RING_PX) - 6);
+        labels.push({ text: 'Sun', x: sunPoint[0], y: sunPoint[1] - Math.max(radius, SMALL_BODY_RING_PX) - 6, priority: LABEL_PRIORITY.body });
         sky.drawn.push({ body: BODIES.sun, x: sunPoint[0], y: sunPoint[1] });
     }
-    if (layers.stars) drawMoon(ctx, project, lat, lon, focal);
+    if (layers.stars) {
+        drawPlanets(ctx, project, onScreen, labels);
+        drawMoon(ctx, project, lat, lon, focal, labels);
+    }
 
     for (const { sat: s, dir, sunlit } of sky.visible) {
         const point = project(dir);
@@ -391,41 +487,218 @@ function drawSky() {
         ctx.beginPath();
         ctx.arc(point[0], point[1], isSelected ? 6 : style.featured || starred ? 5 : 3, 0, 2 * Math.PI);
         ctx.fill();
-        if (style.featured || isSelected || starred || FRIENDLY_NAMES[s.id]) {
-            ctx.fillStyle = '#fff';
-            const name = (starred ? '★ ' : '') + s.name;
-            // Kept on screen even when the satellite is near an edge.
-            const half = ctx.measureText(name).width / 2 + 4;
-            ctx.fillText(name, Math.min(Math.max(point[0], half), width - half), point[1] - 10);
-        }
+        // A dark rim, so the dot stays crisp over a bright sky or the camera.
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.stroke();
         ctx.globalAlpha = 1;
+        if (style.featured || isSelected || starred || FRIENDLY_NAMES[s.id]) {
+            labels.push({
+                text: (starred ? '★ ' : '') + s.name, x: point[0], y: point[1] - 10, alt: point[1] + 20,
+                priority: isSelected ? LABEL_PRIORITY.tracked : starred ? LABEL_PRIORITY.starred : LABEL_PRIORITY.satellite,
+                // Kept on screen even when the satellite is near an edge.
+                clamp: true, color: sunlit ? '#fff' : 'rgba(255, 255, 255, 0.65)',
+            });
+        }
         sky.drawn.push({ sat: s, x: point[0], y: point[1] });
     }
 
-    drawAircraft(ctx, width, project, onScreen, lat, lon);
+    drawAircraft(ctx, project, onScreen, lat, lon, labels);
+    placeSkyLabels(ctx, labels, width);
 
     const target = trackedTarget(lat, lon);
     if (target) drawTracking(ctx, width, height, project, target);
 }
 
+/**
+ * The ground below the horizon, so it is plain which way is down, and a faint glow along the horizon.
+ * The horizon is a great circle, so on screen it is a straight line, and the ground the part of the
+ * screen on its far side from the sky. Over the camera, only a light tint.
+ */
+function drawGround(ctx, width, height, focal, camera) {
+    const [ux, uy, uz] = worldToDevice([0, 0, 1]);
+    const cx = width / 2, cy = height / 2;
+    // How far up the line of sight through a screen point goes ([(x - cx) / f, -(y - cy) / f, -1] in
+    // the phone's frame, dotted with up): below the horizon where it is negative.
+    const up = (x, y) => (ux * (x - cx) - uy * (y - cy)) / focal - uz;
+    // The screen's corners on the ground's side, and where its edges cross the horizon.
+    const corners = [[0, 0], [width, 0], [width, height], [0, height]];
+    const ground = [];
+    corners.forEach((p, i) => {
+        const q = corners[(i + 1) % 4];
+        const a = up(...p), b = up(...q);
+        if (a < 0) ground.push(p);
+        if ((a < 0) !== (b < 0)) {
+            const t = a / (a - b);
+            ground.push([p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])]);
+        }
+    });
+    // Which way up rises fastest across the screen, and the horizon's nearest point to the middle.
+    const gx = ux / focal, gy = -uy / focal, g2 = gx * gx + gy * gy;
+    const level = g2 > 1e-12;
+    const g = Math.sqrt(g2), k = level ? -up(cx, cy) / g2 : 0;
+    const hx = cx + k * gx, hy = cy + k * gy;
+
+    if (!camera && level) {
+        const glow = ctx.createLinearGradient(hx, hy, hx + gx / g * HORIZON_GLOW_PX, hy + gy / g * HORIZON_GLOW_PX);
+        glow.addColorStop(0, 'rgba(110, 231, 255, 0.12)');
+        glow.addColorStop(1, 'rgba(110, 231, 255, 0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, width, height);
+    }
+    if (ground.length < 3) return;
+    ctx.beginPath();
+    ground.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    if (camera) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+    } else if (level) {
+        const reach = Math.max(width, height);
+        const shade = ctx.createLinearGradient(hx, hy, hx - gx / g * reach, hy - gy / g * reach);
+        shade.addColorStop(0, GROUND_NEAR);
+        shade.addColorStop(1, GROUND_FAR);
+        ctx.fillStyle = shade;
+    } else {
+        // Looking straight down.
+        ctx.fillStyle = GROUND_FAR;
+    }
+    ctx.fill();
+}
+
+/** The horizon with a tick every 5° (longer every 15°), the compass points, and circles 30° and 60° up. */
+function drawHorizon(ctx, project, labels) {
+    ctx.strokeStyle = 'rgba(110, 231, 255, 0.55)';
+    ctx.lineWidth = 1.5;
+    traceCurve(ctx, 0, 360, 3, az => project(direction(az, 0)));
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let az = 0; az < 360; az += 5) {
+        const from = project(direction(az, 0)), to = project(direction(az, az % 15 ? 0.6 : 1.5));
+        if (!from || !to) continue;
+        ctx.moveTo(from[0], from[1]);
+        ctx.lineTo(to[0], to[1]);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    for (const elevation of [30, 60]) traceCurve(ctx, 0, 360, 3, az => project(direction(az, elevation)));
+
+    // Under the horizon, clear of the ticks.
+    for (let az = 0; az < 360; az += 15) {
+        const point = project(direction(az, 0));
+        if (!point) continue;
+        if (az % 45 === 0) {
+            labels.push({ text: compass(az), x: point[0], y: point[1] + 17, priority: LABEL_PRIORITY.compass, weight: 600, color: 'rgba(255, 255, 255, 0.9)' });
+        } else {
+            labels.push({ text: `${az}°`, x: point[0], y: point[1] + 15, priority: LABEL_PRIORITY.degrees, size: 10, color: 'rgba(110, 231, 255, 0.6)' });
+        }
+    }
+    const zenith = project([0, 0, 1]);
+    if (zenith) labels.push({ text: 'Overhead', x: zenith[0], y: zenith[1] - 8, priority: LABEL_PRIORITY.compass, color: 'rgba(255, 255, 255, 0.85)' });
+}
+
+/** The constellations' stick figures (layers.constellations), faintly, and their names. */
+function drawConstellations(ctx, project, labels) {
+    ctx.strokeStyle = CONSTELLATION_COLOR;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const { lines } of sky.constellations) {
+        for (const line of lines) {
+            let previous = null;
+            for (const dir of line) {
+                // A straight line on screen is the great circle between the stars, as it should be.
+                const point = dir[2] > -0.02 ? project(dir) : null;
+                if (point && previous) {
+                    ctx.moveTo(previous[0], previous[1]);
+                    ctx.lineTo(point[0], point[1]);
+                }
+                previous = point;
+            }
+        }
+    }
+    ctx.stroke();
+    for (const { name, dir } of sky.constellations) {
+        const point = dir[2] > 0 ? project(dir) : null;
+        if (point) labels.push({ text: name.toUpperCase(), x: point[0], y: point[1], priority: LABEL_PRIORITY.constellation, size: 10, color: 'rgba(160, 185, 255, 0.6)' });
+    }
+}
+
+/** The planets, sized by brightness, each with a soft glow in its colour. */
+function drawPlanets(ctx, project, onScreen, labels) {
+    for (const { name, dir, mag, color: [r, g, b] } of sky.planets) {
+        const point = project(dir);
+        if (!onScreen(point)) continue;
+        const [x, y] = point;
+        const radius = Math.max(1.8, 3.4 - 0.45 * mag);
+        const glow = ctx.createRadialGradient(x, y, 0, x, y, radius * 3.5);
+        glow.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.45)`);
+        glow.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(x, y, radius * 3.5, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, 2 * Math.PI);
+        ctx.fill();
+        labels.push({ text: name, x, y: y - radius - 7, alt: y + radius + 15, priority: LABEL_PRIORITY.planet, color: `rgb(${r}, ${g}, ${b})` });
+    }
+}
+
 /** Aircraft above the horizon, as small planes in their altitude colour, labelled once 5° up. */
-function drawAircraft(ctx, width, project, onScreen, lat, lon) {
+function drawAircraft(ctx, project, onScreen, lat, lon, labels) {
     for (const { a, az, el: elevation } of aircraftInView(lat, lon)) {
         const point = project(direction(az, elevation));
         if (!onScreen(point)) continue;
         const isSelected = a === selectedAircraft;
-        ctx.fillStyle = isSelected ? '#fff' : AIRCRAFT_BANDS[aircraftBand(a)].css;
         ctx.font = `${isSelected ? 20 : 15}px system-ui, sans-serif`;
+        ctx.lineWidth = 2.5;
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.strokeText('✈', point[0], point[1] + 5);
+        ctx.fillStyle = isSelected ? '#fff' : AIRCRAFT_BANDS[aircraftBand(a)].css;
         ctx.fillText('✈', point[0], point[1] + 5);
-        ctx.font = '13px system-ui, sans-serif';
         if (isSelected || elevation >= 5) {
-            ctx.fillStyle = '#fff';
-            const name = `${a.name} · ${describeAltitude(a)}`;
-            const half = ctx.measureText(name).width / 2 + 4;
-            ctx.fillText(name, Math.min(Math.max(point[0], half), width - half), point[1] - 12);
+            labels.push({
+                text: `${a.name} · ${describeAltitude(a)}`, x: point[0], y: point[1] - 12, alt: point[1] + 24,
+                priority: isSelected ? LABEL_PRIORITY.tracked : LABEL_PRIORITY.aircraft, clamp: true,
+            });
         }
         sky.drawn.push({ aircraft: a, x: point[0], y: point[1] });
     }
+    ctx.font = '13px system-ui, sans-serif';
+}
+
+/**
+ * Draws the labels, the most important first, each where it covers none already drawn: at its
+ * place, or its second place (alt) if it has one; failing both it is left out, unless it is the
+ * tracked one's. Outlined in black, to read over the camera's picture as well as the dark.
+ * A label is { text, x, y, priority, alt?, size? (px), weight?, color?, clamp? (kept on screen) }.
+ */
+function placeSkyLabels(ctx, labels, width) {
+    labels.sort((a, b) => b.priority - a.priority);
+    const placed = [];
+    const free = box => !placed.some(p => box[0] < p[2] && box[2] > p[0] && box[1] < p[3] && box[3] > p[1]);
+    ctx.textAlign = 'center';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+    for (const label of labels) {
+        const size = label.size ?? 13;
+        ctx.font = `${label.weight ?? 400} ${size}px system-ui, sans-serif`;
+        const half = ctx.measureText(label.text).width / 2 + 2;
+        const x = label.clamp ? Math.min(Math.max(label.x, half + 2), width - half - 2) : label.x;
+        const box = y => [x - half, y - size, x + half, y + size * 0.35];
+        let y = [label.y, label.alt].find(y => y != null && free(box(y)));
+        if (y == null) {
+            if (label.priority < LABEL_PRIORITY.tracked) continue;
+            y = label.y;
+        }
+        placed.push(box(y));
+        ctx.strokeText(label.text, x, y);
+        ctx.fillStyle = label.color ?? '#fff';
+        ctx.fillText(label.text, x, y);
+    }
+    ctx.font = '13px system-ui, sans-serif';
 }
 
 /** What sky view is guiding the user to: the selected satellite, Sun or Moon, as { name, dir }. */
@@ -444,7 +717,7 @@ function trackedTarget(lat, lon) {
  * The geostationary arc: where in the sky the satellites over the equator sit, from this location,
  * with their longitudes marked. A dish for a geostationary satellite points somewhere along it.
  */
-function drawGeoArc(ctx, project, lat, lon) {
+function drawGeoArc(ctx, project, lat, lon, labels) {
     const at = satLon => {
         const dir = skyDirection(toGlobe(0, satLon, GEO_ALTITUDE_KM), lat, lon);
         return dir[2] > 0 ? project(dir) : null;
@@ -456,7 +729,6 @@ function drawGeoArc(ctx, project, lat, lon) {
     traceCurve(ctx, lon - 90, lon + 90, 1, at);
     ctx.setLineDash([]);
     ctx.fillStyle = GEO_ARC_COLOR;
-    ctx.font = '11px system-ui, sans-serif';
     let labelled = false;
     for (let satLon = Math.ceil((lon - 90) / 10) * 10; satLon <= lon + 90; satLon += 10) {
         const point = at(satLon);
@@ -465,10 +737,11 @@ function drawGeoArc(ctx, project, lat, lon) {
         ctx.arc(point[0], point[1], 2, 0, 2 * Math.PI);
         ctx.fill();
         const wrapped = ((satLon + 540) % 360) - 180;
-        ctx.fillText(wrapped === 0 ? '0°' : `${Math.abs(wrapped)}°${wrapped > 0 ? 'E' : 'W'}`, point[0], point[1] + 14);
+        const text = wrapped === 0 ? '0°' : `${Math.abs(wrapped)}°${wrapped > 0 ? 'E' : 'W'}`;
+        labels.push({ text, x: point[0], y: point[1] + 14, priority: LABEL_PRIORITY.geo, size: 11, color: GEO_ARC_COLOR });
         // Name the arc once, by the first longitude in view.
         if (!labelled) {
-            ctx.fillText('Geostationary arc', point[0], point[1] - 8);
+            labels.push({ text: 'Geostationary arc', x: point[0], y: point[1] - 8, priority: LABEL_PRIORITY.geo, size: 11, color: GEO_ARC_COLOR });
             labelled = true;
         }
     }
@@ -499,7 +772,7 @@ function markSmall(ctx, point, radius, color) {
 }
 
 /** The Moon, with its phase: lit on the side towards the Sun. */
-function drawMoon(ctx, project, lat, lon, focal) {
+function drawMoon(ctx, project, lat, lon, focal, labels) {
     const dir = skyDirection(moon.globe, lat, lon);
     const point = project(dir);
     if (!point) return;
@@ -528,8 +801,7 @@ function drawMoon(ctx, project, lat, lon, focal) {
     ctx.fill();
     ctx.restore();
     markSmall(ctx, point, radius, '#e8e6dc');
-    ctx.fillStyle = '#fff';
-    ctx.fillText(`Moon · ${Math.round(moon.lit * 100)}%`, point[0], point[1] - Math.max(radius, SMALL_BODY_RING_PX) - 6);
+    labels.push({ text: `Moon · ${Math.round(moon.lit * 100)}%`, x: point[0], y: point[1] - Math.max(radius, SMALL_BODY_RING_PX) - 6, priority: LABEL_PRIORITY.body });
     sky.drawn.push({ body: BODIES.moon, x: point[0], y: point[1] });
 }
 
