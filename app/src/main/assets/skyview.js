@@ -246,7 +246,10 @@ function openSkyView() {
     calibrate.setAttribute('aria-label', 'Calibrate the compass');
     calibrate.dataset.opens = 'calibration';
     calibrate.addEventListener('click', openCalibration);
-    document.body.append(sky.canvas, close, camera, calibrate);
+    // Marks the bottom of the safe area, for the heading tape (drawHeadingTape).
+    const bottom = document.createElement('div');
+    bottom.id = 'sky-bottom';
+    document.body.append(sky.canvas, close, camera, calibrate, bottom);
     wantOrientation('sky', true);
     loadSkyline();
     compassStatusChanged();
@@ -262,6 +265,7 @@ function closeSkyView() {
     document.getElementById('sky-close').remove();
     document.getElementById('sky-camera').remove();
     document.getElementById('sky-calibrate').remove();
+    document.getElementById('sky-bottom').remove();
     wantOrientation('sky', false);
     compassStatusChanged();
     overlaysChanged();
@@ -516,10 +520,92 @@ function drawSky() {
     }
 
     drawAircraft(ctx, project, onScreen, lat, lon, labels);
-    placeSkyLabels(ctx, labels, width);
+    const tape = headingTapeBox(width, height);
+    placeSkyLabels(ctx, labels, width, [[tape.left, tape.top - TAPE_READING_PX, tape.left + tape.width, tape.top + tape.height]]);
 
     const target = trackedTarget(lat, lon);
     if (target) drawTracking(ctx, width, height, project, target);
+    drawHeadingTape(ctx, width, tape);
+}
+
+/** Degrees either side of the heading that the heading tape shows. */
+const TAPE_SPAN_DEGREES = 40;
+/** How much of the bottom the heading tape and its reading take, and the reading alone above it. */
+const TAPE_CLEARANCE_PX = 60, TAPE_READING_PX = 24;
+
+/** The lowest the heading tape goes: above the info sheet or calibration prompt, else the safe area. */
+function skyFloor(height) {
+    const covering = sheet.node ?? document.querySelector('.calibration-prompt');
+    return covering ? covering.offsetTop - 8 : (document.getElementById('sky-bottom')?.offsetTop ?? height - 16);
+}
+
+/** Where the heading tape goes, centred at the bottom: { left, top, width, height }. */
+function headingTapeBox(width, height) {
+    const tapeWidth = Math.min(width - 32, 360), tapeHeight = 30;
+    return { left: (width - tapeWidth) / 2, top: skyFloor(height) - tapeHeight, width: tapeWidth, height: tapeHeight };
+}
+
+/**
+ * Along the bottom of the screen: the bearing and elevation of the middle of the view, over a strip
+ * of the compass that slides as the phone turns. Clear of the info sheet and the calibration prompt.
+ */
+function drawHeadingTape(ctx, width, { left, top, width: tapeWidth, height: tapeHeight }) {
+    const [e, n, u] = deviceToWorld([0, 0, -1]);
+    // Near straight up or down, the middle's own bearing swings wildly; the way the user faces takes
+    // over: where the bottom of the screen points when looking up, the top when looking down.
+    const [ye, yn] = deviceToWorld([0, 1, 0]);
+    const w = -u * Math.abs(u);
+    const heading = (Math.atan2(e + w * ye, n + w * yn) * 180 / Math.PI + 360) % 360;
+    const elevation = Math.asin(Math.max(-1, Math.min(1, u))) * 180 / Math.PI;
+
+    const middle = width / 2;
+    const perDegree = tapeWidth / 2 / TAPE_SPAN_DEGREES;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(10, 14, 22, 0.8)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(left, top, tapeWidth, tapeHeight, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.clip();
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = 'rgba(110, 231, 255, 0.6)';
+    ctx.beginPath();
+    for (let az = Math.ceil((heading - TAPE_SPAN_DEGREES) / 5) * 5; az <= heading + TAPE_SPAN_DEGREES; az += 5) {
+        const x = middle + (az - heading) * perDegree;
+        const mark = ((az % 360) + 360) % 360;
+        const length = mark % 15 ? 4 : 8;
+        ctx.moveTo(x, top + tapeHeight);
+        ctx.lineTo(x, top + tapeHeight - length);
+        if (mark % 15) continue;
+        const point = mark % 45 === 0;
+        ctx.font = `${point ? 600 : 400} ${point ? 12 : 10}px system-ui, sans-serif`;
+        ctx.fillStyle = point ? 'rgba(255, 255, 255, 0.9)' : 'rgba(110, 231, 255, 0.7)';
+        ctx.fillText(point ? compass(mark) : `${mark}`, x, top + 13);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // The middle's marker, and the reading above the tape.
+    ctx.fillStyle = SKY_TRACK_COLOR;
+    ctx.beginPath();
+    ctx.moveTo(middle - 6, top + tapeHeight + 1);
+    ctx.lineTo(middle + 6, top + tapeHeight + 1);
+    ctx.lineTo(middle, top + tapeHeight - 7);
+    ctx.closePath();
+    ctx.fill();
+    const text = `${compass(heading)} ${Math.round(heading) % 360}° · ${elevation >= 0 ? `${Math.round(elevation)}° up` : `${Math.round(-elevation)}° down`}`;
+    ctx.font = '600 14px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.strokeText(text, middle, top - 7);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(text, middle, top - 7);
+    ctx.font = '13px system-ui, sans-serif';
 }
 
 /**
@@ -688,10 +774,11 @@ function drawAircraft(ctx, project, onScreen, lat, lon, labels) {
  * place, or its second place (alt) if it has one; failing both it is left out, unless it is the
  * tracked one's. Outlined in black, to read over the camera's picture as well as the dark.
  * A label is { text, x, y, priority, alt?, size? (px), weight?, color?, clamp? (kept on screen) }.
+ * Reserved boxes ([left, top, right, bottom]) are kept clear, as if already drawn on.
  */
-function placeSkyLabels(ctx, labels, width) {
+function placeSkyLabels(ctx, labels, width, reserved = []) {
     labels.sort((a, b) => b.priority - a.priority);
-    const placed = [];
+    const placed = [...reserved];
     const free = box => !placed.some(p => box[0] < p[2] && box[2] > p[0] && box[1] < p[3] && box[3] > p[1]);
     ctx.textAlign = 'center';
     ctx.lineJoin = 'round';
@@ -830,8 +917,8 @@ function drawTracking(ctx, width, height, project, { name, dir, rangeKm }) {
     const point = project(dir);
     // The status line sits level with the close button, below the status bar.
     const pillTop = (document.getElementById('sky-close')?.offsetTop ?? 24) + 5;
-    // Keep clear of the status line above and the info sheet below.
-    const top = pillTop + 36, bottom = height - (sheet.node?.offsetHeight ?? 0) - 24;
+    // Keep clear of the status line above and the heading tape and info sheet below.
+    const top = pillTop + 36, bottom = skyFloor(height) - TAPE_CLEARANCE_PX;
     const onScreen = point && point[0] > 24 && point[0] < width - 24 && point[1] > top && point[1] < bottom;
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 250);
     ctx.strokeStyle = SKY_TRACK_COLOR;
