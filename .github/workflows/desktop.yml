@@ -1,0 +1,79 @@
+# Builds the Windows and Linux apps on GitHub's machines and attaches them to the release: on
+# publishing a release, or by hand (Actions › Desktop builds › Run workflow) for an existing one.
+# The APK is built and uploaded locally, as its debug signing key is the local machine's.
+name: Desktop builds
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release to attach the builds to (empty for the latest)
+        required: false
+        default: ""
+      upload:
+        description: Attach them to the release (off to only build, as workflow artifacts)
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Test
+        run: dotnet test desktop/tests
+      - name: Build
+        run: dotnet publish windows/WhatsUp.csproj -c Release -o windows/publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WhatsUp.exe
+          path: windows/publish/WhatsUp.exe
+      - name: Attach to the release
+        if: github.event_name == 'release' || inputs.upload
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "${TAG:-$(gh release view --json tagName -q .tagName)}" windows/publish/WhatsUp.exe --clobber
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Test
+        run: dotnet test desktop/tests
+      - name: Build
+        run: |
+          dotnet publish linux/WhatsUp.Linux.csproj -c Release -o linux/publish
+          sh linux/build-package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WhatsUp-linux-x64.tar.gz
+          path: release/WhatsUp-linux-x64.tar.gz
+      - name: Attach to the release
+        if: github.event_name == 'release' || inputs.upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "${TAG:-$(gh release view --json tagName -q .tagName)}" release/WhatsUp-linux-x64.tar.gz --clobber

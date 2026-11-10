@@ -51,7 +51,7 @@ dotnet publish windows/WhatsUp.csproj -c Release -o windows/publish
 dotnet publish linux/WhatsUp.Linux.csproj -c Release -o linux/publish
 ```
 
-The Windows exe is written to `windows/publish/WhatsUp.exe`. Running it with the environment variable `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` opens the page to Edge's DevTools (`edge://inspect`). On Linux (or WSL), `sh linux/build-package.sh` then packs `linux/publish/whatsup` into `release/WhatsUp-linux-x64.tar.gz`. A Linux debug build run with `WHATSUP_TEST_PORT=9334` takes test commands on that port (`linux/TestHook.cs`).
+The Windows exe is written to `windows/publish/WhatsUp.exe`. Running it with the environment variable `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` opens the page to Edge's DevTools (`edge://inspect`). On Linux (or WSL), `sh linux/build-package.sh` then packs `linux/publish/whatsup` into `release/WhatsUp-linux-x64.tar.gz`. GitHub builds both desktop apps itself and attaches them to each release as it is published (`.github/workflows/desktop.yml`); to rebuild them for an existing release, run the workflow by hand from the Actions tab. A Linux debug build run with `WHATSUP_TEST_PORT=9334` takes test commands on that port (`linux/TestHook.cs`).
 
 ## Data and credits
 
