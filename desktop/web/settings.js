@@ -1,11 +1,11 @@
 'use strict';
 
-// The settings page, built as SettingsActivity builds the Android one: location (Windows', or one
-// set by hand), offline mode, map style (a grid of previews), satellites (a card per category,
+// The settings page, built as SettingsActivity builds the Android one: location (the system's, or
+// one set by hand), offline mode, map style (a grid of previews), satellites (a card per category,
 // folding open to its groups), display layers, aircraft, alerts, and about. What to show comes from
-// /data/settings.json (MainForm, SettingsPage.State); each change goes back at once (SettingsPage.Set).
+// /data/settings.json (Host, SettingsPage.State); each change goes back at once (SettingsPage.Set).
 
-const post = message => window.chrome.webview.postMessage(message);
+const post = message => (window.chrome?.webview ?? window.webkit.messageHandlers.whatsup).postMessage(message);
 const set = (key, value) => post({ call: 'set', key, value });
 const content = document.getElementById('content');
 let strings = {};
@@ -68,7 +68,7 @@ function addSwitchRow(parent, title, description, checked, onChange, color) {
 
 // ---- Sections ----
 
-/** Windows' location, or one set by hand: typed as an address, latitude and longitude, or MGRS. */
+/** The system's location, or one set by hand: typed as an address, latitude and longitude, or MGRS. */
 function addLocation(state) {
     addSection('ic_my_location', 'section_location');
     const card = addCard();
@@ -264,7 +264,7 @@ function addAlerts(state) {
     const [favouriteTitle, favouriteDescription] = splitTitle(strings.favourite_alerts);
     const favourite = addSwitchRow(card, favouriteTitle, favouriteDescription, state.favouriteAlerts, on => set('favouriteAlerts', on));
     card.append(message);
-    // Windows won't show the app's notifications: both go back off, and say why.
+    // The system won't show the app's notifications: both go back off, and say why.
     settingsPage.alertsRefused = text => {
         iss.input.checked = favourite.input.checked = false;
         message.textContent = text;
@@ -274,7 +274,7 @@ function addAlerts(state) {
 function addAbout(state) {
     addSection('ic_info', 'section_about');
     addCard().append(make('div', 'about',
-        `${strings.about_version.replace('%1$s', `${state.version} for Windows`)}\n\n${strings.about_text}`));
+        `${strings.about_version.replace('%1$s', `${state.version} for ${state.platform}`)}\n\n${strings.about_text}`));
 }
 
 // ---- The page ----

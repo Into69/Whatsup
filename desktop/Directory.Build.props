@@ -1,0 +1,30 @@
+<Project>
+
+  <!-- What the desktop apps' projects (desktop/, windows/, linux/, imported from there) share. -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>WhatsUp</RootNamespace>
+    <!-- The same version as the Android app's. -->
+    <Version>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../app/build.gradle.kts')), 'versionName = "([^"]+)"').Groups[1].Value)</Version>
+    <Product>WhatsUp</Product>
+    <Description>Satellite tracker on a 3D globe</Description>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!--
+    A shell's published exe: self-contained, so nothing to install first, one file, trimmed and
+    compressed. JSON is built by hand with JsonNode, which needs the reflection-based converters for
+    plain values left on.
+  -->
+  <PropertyGroup Condition="'$(OutputType)' == 'WinExe' Or '$(OutputType)' == 'Exe'">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+
+</Project>

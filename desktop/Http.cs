@@ -13,7 +13,7 @@ static class Http
     public static readonly string Version =
         Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0";
 
-    public static readonly string UserAgent = $"WhatsUp/{Version} (Windows)";
+    public static readonly string UserAgent = $"WhatsUp/{Version} ({(OperatingSystem.IsWindows() ? "Windows" : "Linux")})";
 
     const int ConnectTimeoutMs = 15_000;
     /** How often, in bytes read, progress is reported. */

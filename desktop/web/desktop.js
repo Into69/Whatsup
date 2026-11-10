@@ -1,7 +1,7 @@
 'use strict';
 
-// The Windows app's part of the globe page, loaded by bridge.js. On a phone these are Android views
-// over the WebView (MainActivity); nothing can be drawn over a WebView2, so here they are HTML:
+// The desktop apps' part of the globe page, loaded by bridge.js. On a phone these are Android views
+// over the WebView (MainActivity); nothing can be drawn over a desktop web view, so here they are HTML:
 //   - the column of map buttons at the top right, in the same order, with the same icons
 //   - the downloads panel, and short messages (Android's toasts)
 //   - red night mode, as a filter over the whole page
@@ -9,7 +9,7 @@
 //   - sky view's orientation: there is no sensor to hold up, so the view is dragged round with the
 //     mouse, zoomed with the wheel or turned with the arrow keys, and sent to the page as the
 //     sensor's would be (globe.setOrientation)
-// MainForm calls desktop.start() once the page has loaded, then the others as things change.
+// Host calls desktop.start() once the page has loaded, then the others as things change.
 
 const desktop = (() => {
     let strings = {};
@@ -90,7 +90,7 @@ const desktop = (() => {
     downloadBar.append(downloadFill);
     downloads.append(downloadSummary, downloadRow, downloadBar, downloadQueue);
 
-    /** From MainForm.ShowDownloads: { summary, file, status, progress (0 to 1, or -1 not known), queue }, or null. */
+    /** From Host.ShowDownloads: { summary, file, status, progress (0 to 1, or -1 not known), queue }, or null. */
     function showDownloads(state) {
         downloads.hidden = !state;
         if (!state) return;
@@ -259,7 +259,29 @@ const desktop = (() => {
 
     document.body.append(controls, downloads, toastNode);
 
-    /** From MainForm once the page has loaded: { buttonsHidden, skyLook: "az,el,fov" or "" }. */
+    /**
+     * The system's location through the web view's own (GeoClue, on Linux), for a shell without
+     * another way to it: each fix to Host as 'fix', and 'locationDenied' if there will be none.
+     */
+    let locationWatch = null;
+    function watchLocation(on) {
+        if (locationWatch !== null) navigator.geolocation.clearWatch(locationWatch);
+        locationWatch = null;
+        if (!on) return;
+        if (!navigator.geolocation) {
+            whatsupHost.post('locationDenied');
+            return;
+        }
+        locationWatch = navigator.geolocation.watchPosition(
+            p => whatsupHost.post('fix', p.coords.latitude, p.coords.longitude, p.coords.accuracy ?? 0),
+            e => {
+                // A timeout is only a slow fix; anything else is no location to be had.
+                if (e.code !== e.TIMEOUT) whatsupHost.post('locationDenied');
+            },
+            { enableHighAccuracy: true, maximumAge: 5 * 60 * 1000, timeout: 30 * 1000 });
+    }
+
+    /** From Host once the page has loaded: { buttonsHidden, skyLook: "az,el,fov" or "" }. */
     async function start(state) {
         const [az, el, fov] = state.skyLook.split(',').map(Number);
         if (Number.isFinite(az) && Number.isFinite(el)) Object.assign(look, { az, el });
@@ -274,5 +296,5 @@ const desktop = (() => {
         setNight(document.documentElement.classList.contains('night'));
     }
 
-    return { start, showDownloads, toast, setNight };
+    return { start, showDownloads, toast, setNight, watchLocation };
 })();

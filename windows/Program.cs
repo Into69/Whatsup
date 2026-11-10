@@ -19,6 +19,8 @@ static class Program
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (_, e) => App.Warn("Unhandled", e.Exception.ToString());
         AppDomain.CurrentDomain.UnhandledException += (_, e) => App.Warn("Unhandled", e.ExceptionObject.ToString() ?? "");
+        Strings.Platform = WindowsText.Strings;
+        PassAlerts.Scheduler = new WindowsAlerts();
         var form = new MainForm();
         // A pass alert clicked while the app is open.
         ToastNotificationManagerCompat.OnActivated += _ =>

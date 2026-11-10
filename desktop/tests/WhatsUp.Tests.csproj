@@ -1,13 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- The Android app's unit tests (app/src/test), against this port, on the same sample data. -->
+  <!-- The Android app's unit tests (app/src/test), against the desktop port, on the same sample data. -->
   <PropertyGroup>
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <TargetFramework>net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../WhatsUp.csproj" />
+    <ProjectReference Include="../WhatsUp.Desktop.csproj" />
   </ItemGroup>
 
   <ItemGroup>

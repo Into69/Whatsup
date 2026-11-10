@@ -2,9 +2,6 @@ using Windows.Devices.Geolocation;
 
 namespace WhatsUp;
 
-/** A location fix: where, and how far off it may be in metres (0 when unknown). */
-sealed record Fix(double Lat, double Lon, double AccuracyM);
-
 /**
  * Windows' location (GPS where there is one, otherwise Wi-Fi and the network), as fixes while
  * started. Desktop apps only get it when "Let desktop apps access your location" is on in Windows'

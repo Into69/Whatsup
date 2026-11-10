@@ -8,5 +8,10 @@ local.properties
 windows/**/bin/
 windows/**/obj/
 windows/publish/
+desktop/**/bin/
+desktop/**/obj/
+linux/**/bin/
+linux/**/obj/
+linux/publish/
 
 release/

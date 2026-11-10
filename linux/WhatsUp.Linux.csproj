@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    WhatsUp for Linux: the shared desktop app (../desktop) in a GTK 3 window with a WebKitGTK view,
+    both the system's (bound in Native), with GeoClue's location and desktop notifications. Packed by
+    build-package.sh.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>whatsup</AssemblyName>
+    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <Import Project="../desktop/Directory.Build.props" />
+
+  <ItemGroup>
+    <ProjectReference Include="../desktop/WhatsUp.Desktop.csproj" />
+    <EmbeddedResource Include="whatsup.png" LogicalName="linux/whatsup.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="publish/**" />
+    <None Remove="publish/**" />
+  </ItemGroup>
+
+</Project>

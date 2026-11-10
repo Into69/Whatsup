@@ -381,4 +381,19 @@ public class SkylineTest
 
     [Fact]
     public void NoGroundHereNoSkyline() => Assert.Null(Skyline.Compute(0.0, 0.0, (_, _, _) => null));
+
+    /** The tile as downloaded, decoded here, gives the same pixels as Android's Bitmap did (the .argb.gz). */
+    [Fact]
+    public void DecodesTilesAsAndroidDoes()
+    {
+        var pixels = Skyline.Decode(Samples.Path("terrarium-12-733-1368.png"))!;
+        using var input = new GZipStream(File.OpenRead(Samples.Path("terrarium-12-733-1368.argb.gz")), CompressionMode.Decompress);
+        var bytes = new MemoryStream();
+        input.CopyTo(bytes);
+        var data = bytes.ToArray();
+        for (var i = 0; i < pixels.Length; i++)
+        {
+            Assert.Equal((data[i * 4] << 24) | (data[i * 4 + 1] << 16) | (data[i * 4 + 2] << 8) | data[i * 4 + 3], pixels[i]);
+        }
+    }
 }

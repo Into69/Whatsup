@@ -15,6 +15,7 @@ static class SettingsPage
         return new JsonObject
         {
             ["version"] = Http.Version,
+            ["platform"] = OperatingSystem.IsWindows() ? "Windows" : "Linux",
             ["nightVision"] = settings.NightVision,
             ["location"] = new JsonObject
             {
@@ -103,7 +104,7 @@ static class SettingsPage
             case "passAlerts":
             case "favouriteAlerts":
                 if (key == "passAlerts") settings.PassAlerts = On(); else settings.FavouriteAlerts = On();
-                // Turning an alert on when Windows won't show the app's notifications: they go back off.
+                // Turning an alert on when the system won't show the app's notifications: they go back off.
                 if (On() && !PassAlerts.CanNotify())
                 {
                     settings.PassAlerts = false;

@@ -54,11 +54,10 @@
 #sky:active, .dish-scope:active { cursor: grabbing; }
 
 /*
- * Red night mode, as Android's NightVision near enough: the page in greys, multiplied by pure red;
- * both on the GPU, unlike an SVG colour matrix over a WebGL page.
+ * Red night mode, as Android's NightVision near enough: each pixel's brightness, in red only. One
+ * filter of colour matrices, which both web views run on the GPU (WebKitGTK can't blend an overlay
+ * over WebGL, nor apply an SVG colour matrix there): grey, then the brightness scaled so that sepia,
+ * a hue turn and a saturation boost (all linear) leave exactly that grey in red and nothing in green
+ * or blue.
  */
-html.night body { filter: grayscale(1); }
-html.night::after {
-    content: ""; position: fixed; inset: 0; z-index: 2147483647; pointer-events: none;
-    background: #f00; mix-blend-mode: multiply;
-}
+html.night body { filter: grayscale(1) brightness(0.1738) sepia(1) hue-rotate(-48deg) saturate(15.25); }

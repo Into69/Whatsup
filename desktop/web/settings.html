@@ -95,11 +95,7 @@
         .about { padding: 14px 16px; color: var(--secondary); font-size: 13px; white-space: pre-line; user-select: text; }
 
         /* Red night mode, as on the globe page (desktop.css). */
-        html.night body { filter: grayscale(1); }
-        html.night::after {
-            content: ""; position: fixed; inset: 0; z-index: 2147483647; pointer-events: none;
-            background: #f00; mix-blend-mode: multiply;
-        }
+        html.night body { filter: grayscale(1) brightness(0.1738) sepia(1) hue-rotate(-48deg) saturate(15.25); }
     </style>
 </head>
 <body>

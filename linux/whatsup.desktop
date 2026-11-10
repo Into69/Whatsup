@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=WhatsUp
+Comment=Satellite tracker on a 3D globe
+Exec=whatsup
+Icon=whatsup
+Terminal=false
+Categories=Science;Astronomy;Education;
+Keywords=satellite;ISS;orbit;sky;astronomy;
+StartupWMClass=whatsup

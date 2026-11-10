@@ -172,7 +172,7 @@ sealed class Settings
         set => Put(KeyFavourites, string.Join(",", value));
     }
 
-    /** A location the user set by hand; used instead of Windows' while UseManualLocation. */
+    /** A location the user set by hand; used instead of the system's while UseManualLocation. */
     public Place? ManualLocation
     {
         get
@@ -198,7 +198,7 @@ sealed class Settings
         set => Put(KeyUseManualLocation, value);
     }
 
-    /** The manual location when it is turned on, else null (use Windows'). */
+    /** The manual location when it is turned on, else null (use the system's). */
     public Place? ActiveManualLocation => UseManualLocation ? ManualLocation : null;
 
     /**

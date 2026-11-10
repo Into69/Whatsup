@@ -1,7 +1,4 @@
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.Globalization;
-using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 
 namespace WhatsUp;
@@ -139,27 +136,21 @@ sealed class Skyline
     }
 
     /** A tile's ARGB pixels, as Android's Bitmap.getPixels gives them; null if it isn't there or isn't a tile. */
-    static int[]? Decode(string file)
+    internal static int[]? Decode(string file)
     {
         if (!File.Exists(file)) return null;
         try
         {
-            using var bitmap = new Bitmap(file);
-            if (bitmap.Width != TileSize || bitmap.Height != TileSize) return null;
-            var data = bitmap.LockBits(new Rectangle(0, 0, TileSize, TileSize), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-            try
+            using var stream = File.OpenRead(file);
+            var image = StbImageSharp.ImageResult.FromStream(stream, StbImageSharp.ColorComponents.RedGreenBlueAlpha);
+            if (image.Width != TileSize || image.Height != TileSize) return null;
+            var rgba = image.Data;
+            var pixels = new int[TileSize * TileSize];
+            for (var i = 0; i < pixels.Length; i++)
             {
-                var pixels = new int[TileSize * TileSize];
-                for (var row = 0; row < TileSize; row++)
-                {
-                    Marshal.Copy(data.Scan0 + row * data.Stride, pixels, row * TileSize, TileSize);
-                }
-                return pixels;
+                pixels[i] = rgba[i * 4 + 3] << 24 | rgba[i * 4] << 16 | rgba[i * 4 + 1] << 8 | rgba[i * 4 + 2];
             }
-            finally
-            {
-                bitmap.UnlockBits(data);
-            }
+            return pixels;
         }
         catch (Exception e)
         {
