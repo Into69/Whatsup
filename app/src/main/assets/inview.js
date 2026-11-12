@@ -7,7 +7,9 @@
 //
 // Az, El and range are exact, as in the selected satellite's sheet (pointingAt, WGS84). With the
 // aircraft layer on, the aircraft above the horizon get a section of their own. Those the terrain
-// hides (skyline.js) are listed last, apart.
+// hides (skyline.js) are listed last, apart. Satellites whose terminals have a scan limit
+// (TERMINAL_LIMITS) say how far off boresight a flat terminal would steer to them, or that they are
+// below its reach, and the title counts those in reach.
 
 const IN_VIEW_ROWS = 200;
 const IN_VIEW_REFRESH_MS = 2000;
@@ -92,6 +94,14 @@ function refreshInView() {
     inView.title.textContent = `${all.length.toLocaleString()} satellites${layers.favouritesOnly ? ' (starred only)' : ''}`
         + (layers.aircraft ? ` and ${planes.length.toLocaleString()} aircraft` : '') + ` in line of sight${at}`
         + (hidden.length ? `; ${hidden.length.toLocaleString()} more behind the terrain` : '');
+    for (const [group, limit] of Object.entries(TERMINAL_LIMITS)) {
+        const ofGroup = all.filter(({ sat }) => sat.group === group);
+        if (!ofGroup.length) continue;
+        const reach = reachElevation(limit);
+        const reached = ofGroup.filter(({ el: elevation }) => elevation >= reach).length;
+        inView.title.textContent += `. ${reached.toLocaleString()} of ${ofGroup.length.toLocaleString()} ${groupStyles[group].label}`
+            + ` within a terminal's reach (${reach}° up)`;
+    }
     const terrain = describeSkyline();
     if (terrain) inView.title.textContent += `. ${terrain}`;
     const shownPlanes = q ? planes.filter(({ a }) => aircraftMatches(a, q)) : planes;
@@ -136,7 +146,8 @@ function inViewRow({ sat, az, el: elevation, rangeKm }) {
     swatch.style.background = groupStyles[sat.group].css;
     row.append(swatch, el('span', '', (favourites.has(sat.id) ? '★ ' : '') + sat.name),
         el('span', 'search-sub in-view-look',
-            `${compass(az)} ${Math.round(az)}° · El ${elevation.toFixed(1)}° · ${Math.round(rangeKm).toLocaleString()} km`));
+            `${compass(az)} ${Math.round(az)}° · El ${elevation.toFixed(1)}° · ${Math.round(rangeKm).toLocaleString()} km`
+            + (terminalLimit(sat) ? ` · ${describeReach(sat, elevation)}` : '')));
     row.addEventListener('click', () => {
         closeInView();
         select(sat);

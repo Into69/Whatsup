@@ -95,7 +95,7 @@ function predictPasses(sat, lat, lon, start = simNow(), maxPasses = MAX_PASSES) 
             riseAt = crossing(t - stepS * 1000, t);
         } else if (previous > 0 && current <= 0 && riseAt !== null) {
             sawSet = true;
-            const pass = describePass(satrec, observer, lat, lon, riseAt, crossing(t - stepS * 1000, t));
+            const pass = describePass(satrec, observer, lat, lon, riseAt, crossing(t - stepS * 1000, t), terminalLimit(sat) ? reachElevation(terminalLimit(sat)) : undefined);
             if (pass && pass.peakEl >= MIN_PASS_ELEVATION) passes.push(pass);
             riseAt = null;
         }
@@ -110,9 +110,10 @@ function predictPasses(sat, lat, lon, start = simNow(), maxPasses = MAX_PASSES) 
 
 /**
  * The details of one pass, or null if SGP4 fails on it (an orbit decaying as it re-enters can stop
- * propagating partway through).
+ * propagating partway through). With `minEl`, the lowest a terminal can use (reachElevation), also when the
+ * satellite is above it: `reach`, { start, end } (Dates), or null if it doesn't get that high.
  */
-function describePass(satrec, observer, lat, lon, rise, set) {
+function describePass(satrec, observer, lat, lon, rise, set, minEl) {
     // The peak, by golden-section search between rise and set (elevation has one maximum).
     let a = rise, b = set;
     const ratio = (Math.sqrt(5) - 1) / 2;
@@ -145,7 +146,21 @@ function describePass(satrec, observer, lat, lon, rise, set) {
     }
     // Lit only while too low to see over trees and buildings counts as not visible.
     const visible = !!seen && seen.peakEl >= MIN_PASS_ELEVATION;
+    // Above the terminal's limit: from crossing it on the way up to crossing it on the way down.
+    let reach = null;
+    if (minEl !== undefined && peakLook.el >= minEl) {
+        // From a, below the limit, to b, above it, whichever comes first in time.
+        const cross = (a, b) => {
+            for (let i = 0; i < 20 && Math.abs(b - a) > 1000; i++) {
+                const mid = (a + b) / 2;
+                if (el(mid) < minEl) a = mid; else b = mid;
+            }
+            return new Date((a + b) / 2);
+        };
+        reach = { start: cross(rise, peak), end: cross(set, peak) };
+    }
     return {
+        reach,
         rise: new Date(rise), set: new Date(set), peak: new Date(peak),
         riseAz: riseLook.az,
         setAz: setLook.az,

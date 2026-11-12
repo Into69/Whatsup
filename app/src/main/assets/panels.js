@@ -179,10 +179,30 @@ function describeNextPass(sat) {
     const time = d => d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
     if (now < p.rise.getTime()) {
         return `Next pass in ${describeDuration(p.rise - now)}: rises ${time(p.rise)} in the ${compass(p.riseAz)}, ` +
-            `up to ${Math.round(p.peakEl)}°, sets ${time(p.set)} in the ${compass(p.setAz)}${p.visible ? ' · ★ visible' : ''}`;
+            `up to ${Math.round(p.peakEl)}°, sets ${time(p.set)} in the ${compass(p.setAz)}${p.visible ? ' · ★ visible' : ''}` +
+            describePassReach(sat, p);
     }
     const peak = now < p.peak.getTime() ? `peaks at ${Math.round(p.peakEl)}° in ${describeDuration(p.peak - now)}` : 'past its highest';
-    return `Passing now: ${peak}, sets in ${describeDuration(p.set - now)} in the ${compass(p.setAz)}`;
+    let reach = describePassReach(sat, p);
+    if (reach && p.reach) {
+        reach = now < p.reach.start.getTime() ? reach
+            : now < p.reach.end.getTime() ? ` · in terminal reach for ${describeDuration(p.reach.end - now)} more`
+            : ' · past terminal reach';
+    }
+    return `Passing now: ${peak}, sets in ${describeDuration(p.set - now)} in the ${compass(p.setAz)}` + reach;
+}
+
+/** " · terminal reach 9:41–9:44 PM (3 min)", or " · out of terminal reach", for a terminal-limited satellite; else ''. */
+function describePassReach(sat, p) {
+    return terminalLimit(sat) ? ` · ${passReach(p)}` : '';
+}
+
+/** "terminal reach 9:41–9:44 PM (3 min)" while the pass is above the terminal's limit, or "out of terminal reach". */
+function passReach(p) {
+    if (!p.reach) return 'out of terminal reach';
+    const time = d => d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    const minutes = Math.max(1, Math.round((p.reach.end - p.reach.start) / 60_000));
+    return `terminal reach ${time(p.reach.start)}–${time(p.reach.end)} (${minutes} min)`;
 }
 timeListeners.push(() => {
     sheet.nextPass = null;
@@ -244,7 +264,20 @@ function describePointing(sat) {
         `El ${look.el.toFixed(1)}°${look.el < 0 ? ' (below the horizon)' : ''}`,
         `Skew ${skew}`,
         `${Math.round(look.rangeKm).toLocaleString()} km away`,
-    ].join(' · ');
+        describeTerminalReach(sat, look.el),
+    ].filter(Boolean).join(' · ');
+}
+
+/**
+ * For a satellite whose terminals have a scan limit (TERMINAL_LIMITS): whether a terminal laid flat
+ * here can reach it now, and how far off boresight; else ''.
+ */
+function describeTerminalReach(sat, elevation) {
+    const limit = terminalLimit(sat);
+    if (!limit) return '';
+    const reach = reachElevation(limit);
+    if (elevation >= reach) return `Terminal: in reach, ${describeReach(sat, elevation)}`;
+    return `Terminal: out of reach, ${describeReach(sat, elevation)} (needs ${reach}° up)`;
 }
 setInterval(refreshSheetLive, SHEET_REFRESH_MS);
 
@@ -413,7 +446,7 @@ function togglePasses(sat) {
     setTimeout(() => {
         if (sheet.sat !== sat || !sheet.passesOpen) return;
         try {
-            list.replaceChildren(...passRows(predictPasses(sat, here[1], here[0])));
+            list.replaceChildren(...passRows(predictPasses(sat, here[1], here[0]), sat));
         } catch (e) {
             console.error('Predicting passes failed', e);
             list.replaceChildren(el('div', 'sheet-line', "Couldn't work out passes for this satellite."));
@@ -548,7 +581,7 @@ function outageRows(sat, days, angle) {
     return rows;
 }
 
-function passRows(passes) {
+function passRows(passes, sat) {
     if (!Array.isArray(passes)) {
         const { az, el: elevation } = passes.alwaysUp;
         return [el('div', 'sheet-line', `Always above your horizon: ${Math.round(elevation)}° up in the ${compass(az)}.`)];
@@ -557,7 +590,8 @@ function passRows(passes) {
     const day = d => d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
     const time = d => d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
     return [
-        el('div', 'sheet-line sheet-hint', `Next ${PASS_DAYS} days over ${MIN_PASS_ELEVATION}°. ★ visible to the eye: sunlit, in a dark sky.`),
+        el('div', 'sheet-line sheet-hint', `Next ${PASS_DAYS} days over ${MIN_PASS_ELEVATION}°. ★ visible to the eye: sunlit, in a dark sky.`
+            + (terminalLimit(sat) ? ` Terminal reach: while over ${reachElevation(terminalLimit(sat))}°, for a terminal laid flat.` : '')),
         ...passes.map(p => {
             const minutes = Math.max(1, Math.round((p.set - p.rise) / 60_000));
             const row = el('div', 'pass' + (p.visible ? ' visible' : ''));
@@ -570,6 +604,10 @@ function passRows(passes) {
                 const { start, end, startAz, endAz, peakEl } = p.seen;
                 row.append(el('span', 'pass-seen',
                     `Visible ${time(start)}–${time(end)}, ${compass(startAz)} to ${compass(endAz)}, up to ${Math.round(peakEl)}°`));
+            }
+            if (terminalLimit(sat)) {
+                const reach = passReach(p);
+                row.append(el('span', 'pass-reach', reach[0].toUpperCase() + reach.slice(1)));
             }
             return row;
         }),

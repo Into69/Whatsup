@@ -57,6 +57,47 @@ const SELECTED = [1, 1, 1, 1], SELECTED_SIZE = 7;
 const FOOTPRINT = [0.31, 0.76, 0.97, 0.75], FOOTPRINT_HIGH = [0.31, 0.76, 0.97, 0.35], FOOTPRINT_SIZE = 2;
 const FOOTPRINT_DOTS = 360, FOOTPRINT_HIGH_ELEVATION = 10;
 
+/**
+ * User terminals' reach, by group. A flat phased-array terminal steers its beam electronically, so
+ * it can only reach satellites within maxOffBoresight of straight up, its scan cone: those at least
+ * minEl = 90 - maxOffBoresight degrees above the horizon, with the terminal laid flat. The network
+ * may set its own minimum elevation too (networkMinEl, from its filings); a satellite is in reach
+ * above both. These show on the globe (footprint rings), in sky view (circles round overhead), in
+ * the in-view list and in the satellite's sheet.
+ *   - Amazon Leo: its terminals scan 55 degrees off boresight, and its FCC filing puts its minimum
+ *     elevation at 35 degrees too.
+ *   - Starlink: the Standard and Mini dishes see 110 degrees across; the network's FCC minimum is
+ *     25 degrees (lower in places since 2026, for its lowest shells and far north).
+ *   - OneWeb: flat panels (Intellian's) scan 70 degrees from zenith; its FCC filing sized the
+ *     constellation so a satellite is always 55 degrees up or more.
+ */
+const TERMINAL_LIMITS = {
+    'amazon-leo': { name: 'Amazon Leo', minEl: 35, maxOffBoresight: 55 },
+    starlink: { name: 'Starlink', minEl: 35, maxOffBoresight: 55, networkMinEl: 25 },
+    oneweb: { name: 'OneWeb', minEl: 20, maxOffBoresight: 70, networkMinEl: 55 },
+};
+
+/** The terminal limit for a satellite's group, or null if it has none. */
+function terminalLimit(sat) {
+    return TERMINAL_LIMITS[sat.group] ?? null;
+}
+
+/** The lowest elevation (degrees) a terminal can use a satellite at: above its cone and the network's minimum. */
+function reachElevation(limit) {
+    return Math.max(limit.minEl, limit.networkMinEl ?? -90);
+}
+
+/**
+ * For a satellite with a terminal limit, at `elevation`: "22° off boresight" when in reach, else why
+ * not, "below the terminal's cone" or "below the network's minimum"; '' for one without a limit.
+ */
+function describeReach(sat, elevation) {
+    const limit = terminalLimit(sat);
+    if (!limit) return '';
+    if (elevation >= reachElevation(limit)) return `${Math.round(90 - elevation)}° off boresight`;
+    return elevation < limit.minEl ? "below the terminal's cone" : "below the network's minimum";
+}
+
 /** Groups whose orbital planes are drawn (layers.planes): near-circular constellations. */
 const PLANE_GROUPS = new Set(['starlink', 'oneweb', 'amazon-leo', 'qianfan', 'guowang', 'iridium', 'globalstar', 'orbcomm', 'gnss', 'planet', 'spire']);
 const PLANE_DOTS = 120, MAX_PLANES = 400, PLANE_ALPHA = 0.18, PLANE_SIZE = 1.2;
@@ -765,6 +806,16 @@ const orbitLayer = {
             const { lat, lon, altKm } = selected.now;
             for (const [la, lo] of footprintRing(lat, lon, altKm, 0)) this.point(la, lo, 1, FOOTPRINT, FOOTPRINT_SIZE);
             for (const [la, lo] of footprintRing(lat, lon, altKm, FOOTPRINT_HIGH_ELEVATION)) this.point(la, lo, 1, FOOTPRINT_HIGH, FOOTPRINT_SIZE);
+            // Where a terminal can reach it: the satellite inside the terminal's scan cone.
+            // and, fainter, the network's own minimum elevation where it has one.
+            const limit = terminalLimit(selected);
+            if (limit) {
+                const rgb = groupStyles[selected.group].color.slice(0, 3);
+                for (const [la, lo] of footprintRing(lat, lon, altKm, limit.minEl)) this.point(la, lo, 1, [...rgb, 0.9], FOOTPRINT_SIZE + 0.5);
+                if (limit.networkMinEl !== undefined) {
+                    for (const [la, lo] of footprintRing(lat, lon, altKm, limit.networkMinEl)) this.point(la, lo, 1, [...rgb, 0.4], FOOTPRINT_SIZE);
+                }
+            }
         }
         if (layers.planes) {
             for (const { color, xyz } of planes) {

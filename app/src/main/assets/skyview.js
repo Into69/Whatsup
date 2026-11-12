@@ -403,10 +403,12 @@ const HORIZON_GLOW_PX = 60;
 const CONSTELLATION_COLOR = 'rgba(140, 170, 255, 0.35)';
 /** Satellites and aircraft behind the terrain (skyline.js): faint, and not labelled. */
 const HIDDEN_OPACITY = 0.3;
+/** Satellites outside their terminals' scan cone (TERMINAL_LIMITS): dimmed by this much. */
+const OUT_OF_REACH_OPACITY = 0.45;
 /** Which labels win where they would overlap (placeSkyLabels): the highest first. */
 const LABEL_PRIORITY = {
     tracked: 100, body: 90, compass: 80, starred: 70, planet: 60, satellite: 50, aircraft: 45,
-    geo: 30, star: 20, constellation: 10, degrees: 5,
+    terminal: 35, geo: 30, star: 20, constellation: 10, degrees: 5,
 };
 
 function drawSky() {
@@ -471,6 +473,7 @@ function drawSky() {
 
     const [lon, lat] = here;
     drawGeoArc(ctx, project, lat, lon, labels);
+    drawTerminalCones(ctx, project, width, height, labels);
 
     const sunPoint = project(skyDirection(sun.map(c => c * 1e6), lat, lon));
     if (sunPoint) {
@@ -498,7 +501,9 @@ function drawSky() {
         const starred = favourites.has(s.id);
         const [az, elevation] = azEl(dir);
         const hidden = behindTerrain(az, elevation);
-        ctx.globalAlpha = hidden ? HIDDEN_OPACITY : sunlit ? 1 : SHADOW_OPACITY + 0.2;
+        const limit = terminalLimit(s);
+        const reach = limit && elevation < reachElevation(limit) ? OUT_OF_REACH_OPACITY : 1;
+        ctx.globalAlpha = (hidden ? HIDDEN_OPACITY : sunlit ? 1 : SHADOW_OPACITY + 0.2) * reach;
         ctx.fillStyle = isSelected ? '#fff' : style.css;
         ctx.beginPath();
         ctx.arc(point[0], point[1], isSelected ? 6 : style.featured || starred ? 5 : 3, 0, 2 * Math.PI);
@@ -788,6 +793,12 @@ function placeSkyLabels(ctx, labels, width, reserved = []) {
         const size = label.size ?? 13;
         ctx.font = `${label.weight ?? 400} ${size}px system-ui, sans-serif`;
         const half = ctx.measureText(label.text).width / 2 + 2;
+        // A label with `spots` ([x, y] choices, best first) goes at the first that is free, if any.
+        if (label.spots) {
+            const spot = label.spots.find(([sx, sy]) => free([sx - half, sy - size, sx + half, sy + size * 0.35]));
+            if (!spot) continue;
+            [label.x, label.y] = spot;
+        }
         const x = label.clamp ? Math.min(Math.max(label.x, half + 2), width - half - 2) : label.x;
         const box = y => [x - half, y - size, x + half, y + size * 0.35];
         let y = [label.y, label.alt].find(y => y != null && free(box(y)));
@@ -813,6 +824,56 @@ function trackedTarget(lat, lon) {
     if (selectedBody?.kind === 'sun') return { name: 'Sun', dir: skyDirection(sun.map(c => c * 1e6), lat, lon) };
     if (selectedBody?.kind === 'moon') return { name: 'Moon', dir: skyDirection(moon.globe, lat, lon) };
     return null;
+}
+
+/**
+ * For each group shown with terminal limits (TERMINAL_LIMITS), circles round overhead in its colour:
+ * dashed for a flat terminal's scan cone, dotted and fainter for the network's own minimum. Groups
+ * with a circle at the same height share it, their colours taking turns along it. Their satellites
+ * outside reach are dimmed (drawSky). Each circle is labelled once, near the middle of the screen.
+ */
+function drawTerminalCones(ctx, project, width, height, labels) {
+    const groups = new Set(sky.visible.map(({ sat }) => sat.group).filter(group => TERMINAL_LIMITS[group]));
+    const circles = new Map();
+    const add = (group, kind, elevation, text) => {
+        const key = `${kind} ${elevation}`;
+        if (!circles.has(key)) circles.set(key, { kind, elevation, text, groups: [] });
+        circles.get(key).groups.push(group);
+    };
+    for (const group of groups) {
+        const { minEl, maxOffBoresight, networkMinEl } = TERMINAL_LIMITS[group];
+        add(group, 'cone', minEl, `terminal cone: ${minEl}° up (±${maxOffBoresight}°)`);
+        if (networkMinEl !== undefined) add(group, 'network', networkMinEl, `network minimum: ${networkMinEl}° up`);
+    }
+    for (const { kind, elevation, text, groups: shared } of circles.values()) {
+        const dash = kind === 'cone' ? [8, 6] : [2, 5];
+        ctx.save();
+        ctx.globalAlpha = kind === 'cone' ? 0.75 : 0.5;
+        ctx.lineWidth = 1.5;
+        // Each group's colour on every n-th dash.
+        const period = dash[0] + dash[1];
+        shared.forEach((group, i) => {
+            ctx.strokeStyle = groupStyles[group].css;
+            ctx.setLineDash(shared.length > 1 ? [dash[0], period * shared.length - dash[0]] : dash);
+            ctx.lineDashOffset = -i * period;
+            traceCurve(ctx, 0, 360, 2, az => project(direction(az, elevation)));
+        });
+        ctx.restore();
+        // Just inside the circle, nearest the middle of the screen first; placeSkyLabels takes the first free spot.
+        const spots = [];
+        for (let az = 0; az < 360; az += 5) {
+            const point = project(direction(az, elevation + 1.5));
+            if (!point || point[0] < 80 || point[1] < 20 || point[0] > width - 80 || point[1] > height - 20) continue;
+            spots.push(point);
+        }
+        spots.sort((a, b) => Math.hypot(a[0] - width / 2, a[1] - height / 2) - Math.hypot(b[0] - width / 2, b[1] - height / 2));
+        if (spots.length) {
+            labels.push({
+                text: `${shared.map(group => TERMINAL_LIMITS[group].name).join(', ')} ${text}`, x: 0, y: 0, spots,
+                priority: LABEL_PRIORITY.terminal, size: 11, color: groupStyles[shared[0]].css,
+            });
+        }
+    }
 }
 
 /**
