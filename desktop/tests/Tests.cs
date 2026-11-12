@@ -397,3 +397,35 @@ public class SkylineTest
         }
     }
 }
+
+public class UpdatesTest
+{
+    const string ReleaseJson = """
+        {"tag_name":"v0.3","name":"WhatsUp 0.3","assets":[
+          {"name":"WhatsUp.exe","size":26257107,"digest":"sha256:87510A4A","browser_download_url":"https://example.com/WhatsUp.exe"},
+          {"name":"WhatsUp-linux-x64.tar.gz","size":8530074,"browser_download_url":"https://example.com/WhatsUp-linux-x64.tar.gz"}
+        ]}
+        """;
+
+    [Fact]
+    public void ParsesTheAsset()
+    {
+        var release = Updates.Parse(ReleaseJson, "WhatsUp.exe")!;
+        Assert.Equal("0.3", release.Version);
+        Assert.Equal("https://example.com/WhatsUp.exe", release.Url);
+        Assert.Equal(26257107, release.SizeBytes);
+        Assert.Equal("87510a4a", release.Sha256);
+        Assert.Null(Updates.Parse(ReleaseJson, "WhatsUp-linux-x64.tar.gz")!.Sha256);
+        Assert.Null(Updates.Parse(ReleaseJson, "whatsup.apk"));
+    }
+
+    [Theory]
+    [InlineData("0.3", "0.2", true)]
+    [InlineData("v0.10", "0.9", true)]
+    [InlineData("1.0", "0.9.5", true)]
+    [InlineData("0.2.1", "0.2", true)]
+    [InlineData("0.2", "0.2", false)]
+    [InlineData("0.2", "0.2.0", false)]
+    [InlineData("0.1", "0.2", false)]
+    public void ComparesVersionsByNumber(string version, string than, bool newer) => Assert.Equal(newer, Updates.IsNewer(version, than));
+}

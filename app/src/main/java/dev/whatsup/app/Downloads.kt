@@ -6,8 +6,12 @@ import kotlinx.coroutines.flow.update
 import java.io.File
 import java.io.IOException
 
-/** A download, as the progress panel shows it. [totalBytes] is -1 when the server doesn't say. */
-data class Download(val file: String, val bytesRead: Long, val totalBytes: Long, val state: State) {
+/**
+ * A download, as the progress panel shows it. [totalBytes] is -1 when the server doesn't say. [app]
+ * marks a new version of the app itself (Updates), which the panel words differently: there is no
+ * saved copy to fall back on.
+ */
+data class Download(val file: String, val bytesRead: Long, val totalBytes: Long, val state: State, val app: Boolean = false) {
     /** Waiting or under way. */
     val active: Boolean get() = state == State.QUEUED || state == State.RUNNING
 
@@ -49,8 +53,9 @@ class DownloadTracker {
         bytesRead: Long? = null,
         totalBytes: Long? = null,
         state: Download.State = Download.State.RUNNING,
+        app: Boolean = false,
     ) = _downloads.update { all ->
-        val previous = all[key] ?: Download(name, 0, -1, state)
+        val previous = all[key] ?: Download(name, 0, -1, state, app)
         all + (key to previous.copy(
             bytesRead = bytesRead ?: previous.bytesRead,
             totalBytes = totalBytes ?: previous.totalBytes,
@@ -60,23 +65,24 @@ class DownloadTracker {
 
     /**
      * Downloads [url] to [file] (through a temporary file, so a failed download leaves the old copy),
-     * reporting progress under [key] as [name]. Blocking; call off the main thread.
+     * reporting progress under [key] as [name] ([app] for the app itself). Blocking; call off the
+     * main thread.
      */
-    fun downloadTo(url: String, file: File, key: String, name: String) {
+    fun downloadTo(url: String, file: File, key: String, name: String, app: Boolean = false) {
         val partial = File(file.path + ".part")
         try {
-            report(key, name, bytesRead = 0, totalBytes = -1)
+            report(key, name, bytesRead = 0, totalBytes = -1, app = app)
             file.parentFile?.mkdirs()
             partial.outputStream().use { output ->
                 Http.get(url, output, readTimeoutMs = 60_000) { read, total ->
-                    report(key, name, bytesRead = read, totalBytes = total)
+                    report(key, name, bytesRead = read, totalBytes = total, app = app)
                 }
             }
             if (!partial.renameTo(file)) throw IOException("Couldn't replace $file")
-            report(key, name, state = Download.State.DONE)
+            report(key, name, state = Download.State.DONE, app = app)
         } catch (e: Exception) {
             partial.delete()
-            report(key, name, state = Download.State.FAILED)
+            report(key, name, state = Download.State.FAILED, app = app)
             throw e
         }
     }

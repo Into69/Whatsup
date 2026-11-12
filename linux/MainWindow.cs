@@ -293,6 +293,13 @@ sealed unsafe class MainWindow
     void SaveWindow() =>
         host.Settings.Window = $"0,0,{width},{height},{((windowState & WindowStateMaximized) != 0 ? 1 : 0)}";
 
+    /** As closing the window: saves its place and ends the main loop. */
+    void Quit()
+    {
+        Safely("Close", SaveWindow);
+        gtk_main_quit();
+    }
+
 #if DEBUG
     public IntPtr Globe => globe;
     public IntPtr SettingsView => settingsView;
@@ -308,6 +315,7 @@ sealed unsafe class MainWindow
         protected override void ShowSettingsView() => window.ShowSettings();
         protected override void HideSettingsView() => window.HideSettings();
         protected override void ToggleFullScreen() => window.ToggleFullScreen();
+        protected override void Quit() => window.Quit();
 
         /** Through the page's own location (WebKitGTK asks GeoClue): fixes come back as calls ("fix"). */
         bool locating;

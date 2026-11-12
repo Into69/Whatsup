@@ -18,7 +18,9 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The settings screen, as sections of cards: location (the phone's, or one set by hand), map style
@@ -408,6 +410,66 @@ class SettingsActivity : ComponentActivity() {
         text.setLineSpacing(0f, 1.2f)
         text.setPadding(dp(16), dp(14), dp(16), dp(14))
         card.addView(text)
+        addDivider(card)
+        addUpdates(card)
+    }
+
+    /**
+     * Updates (see Updates): whether to look once a day, and a row to look now, which turns into one
+     * to update when there is a newer version. Updating goes back to the map, which downloads it
+     * with its progress panel and then installs it.
+     */
+    private fun addUpdates(card: LinearLayout) {
+        val (title, description) = splitTitle(getString(R.string.update_auto))
+        addSwitchRow(card, title, description, settings.checkUpdates) { settings.checkUpdates = it }
+        addDivider(card)
+
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = android.view.Gravity.CENTER_VERTICAL
+        row.setPadding(dp(16), dp(10), dp(12), dp(10))
+        val status = TextView(this)
+        status.setTextColor(getColor(R.color.text_secondary))
+        status.textSize = 13f
+        status.setLineSpacing(0f, 1.2f)
+        val button = android.widget.Button(this)
+        button.isAllCaps = false
+        button.text = getString(R.string.update_check_now)
+        row.addView(status, LinearLayout.LayoutParams(0, WRAP, 1f))
+        row.addView(button, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = dp(8) })
+        card.addView(row)
+
+        var found: Release? = null
+        button.setOnClickListener {
+            found?.let { release ->
+                Updates.requested = release
+                finish()
+                return@setOnClickListener
+            }
+            if (settings.offlineMode) {
+                status.text = getString(R.string.update_offline)
+                return@setOnClickListener
+            }
+            status.text = getString(R.string.update_checking)
+            button.isEnabled = false
+            lifecycleScope.launch {
+                val result = runCatching { withContext(Dispatchers.IO) { Updates.latest() } }
+                button.isEnabled = true
+                val latest = result.getOrElse { e ->
+                    status.text = getString(R.string.update_check_failed, e.message ?: e.javaClass.simpleName)
+                    return@launch
+                }
+                settings.lastUpdateCheck = System.currentTimeMillis()
+                if (latest != null && Updates.isNewer(latest.version, BuildConfig.VERSION_NAME)) {
+                    found = latest
+                    status.text = getString(R.string.update_available, latest.version) + "\n" +
+                        getString(R.string.update_available_detail, BuildConfig.VERSION_NAME)
+                    button.text = getString(R.string.update_install)
+                } else {
+                    status.text = getString(R.string.update_current, BuildConfig.VERSION_NAME)
+                }
+            }
+        }
     }
 
     // ---- Building blocks ----

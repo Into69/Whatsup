@@ -228,5 +228,6 @@ sealed class MainForm : Form
         protected override void ToggleFullScreen() => form.ToggleFullScreen();
         protected override void StartLocation() => form.tracker.Start();
         protected override void StopLocation() => form.tracker.Stop();
+        protected override void Quit() => form.Close();
     }
 }

@@ -273,8 +273,43 @@ function addAlerts(state) {
 
 function addAbout(state) {
     addSection('ic_info', 'section_about');
-    addCard().append(make('div', 'about',
+    const card = addCard();
+    card.append(make('div', 'about',
         `${strings.about_version.replace('%1$s', `${state.version} for ${state.platform}`)}\n\n${strings.about_text}`));
+    addDivider(card);
+    addUpdates(card, state);
+}
+
+/**
+ * Updates: whether to look once a day, and a row to look now (SettingsPage.CheckUpdate), whose
+ * button turns into Update when there is a newer version; that goes back to the globe, which
+ * downloads it with its progress panel and then restarts into it.
+ */
+function addUpdates(card, state) {
+    const [title, description] = splitTitle(strings.update_auto);
+    addSwitchRow(card, title, description, state.checkUpdates, on => set('checkUpdates', on));
+    addDivider(card);
+    const row = make('div', 'field update-row');
+    const status = make('div', 'update-status');
+    const button = make('button', '', strings.update_check_now);
+    let found = false;
+    button.addEventListener('click', () => {
+        if (found) {
+            post({ call: 'installUpdate' });
+            return;
+        }
+        status.textContent = strings.update_checking;
+        button.disabled = true;
+        post({ call: 'checkUpdate' });
+    });
+    row.append(status, button);
+    card.append(row);
+    settingsPage.updateChecked = ({ text, update }) => {
+        status.textContent = text;
+        button.disabled = false;
+        found = update;
+        button.textContent = update ? strings.update_install : strings.update_check_now;
+    };
 }
 
 // ---- The page ----

@@ -82,6 +82,8 @@ sealed class Settings
     const string KeyWindow = "window";
     /** Where sky view last looked, as dragged with the mouse. */
     const string KeySkyLook = "skyLook";
+    const string KeyCheckUpdates = "checkUpdates";
+    const string KeyLastUpdateCheck = "lastUpdateCheck";
 
     readonly string file = Path.Combine(App.DataDir, "settings.json");
     readonly object gate = new();
@@ -114,6 +116,11 @@ sealed class Settings
     int GetInt(string key, int fallback)
     {
         lock (gate) return prefs[key] is JsonValue v && v.TryGetValue<int>(out var i) ? i : fallback;
+    }
+
+    long GetLong(string key, long fallback)
+    {
+        lock (gate) return prefs[key] is JsonValue v && v.TryGetValue<long>(out var l) ? l : fallback;
     }
 
     void Put(string key, JsonNode? value)
@@ -262,6 +269,20 @@ sealed class Settings
     {
         get => GetString(KeySkyLook);
         set => Put(KeySkyLook, value);
+    }
+
+    /** Look for a newer WhatsUp on GitHub once a day, and offer it (Updates). */
+    public bool CheckUpdates
+    {
+        get => GetBool(KeyCheckUpdates, true);
+        set => Put(KeyCheckUpdates, value);
+    }
+
+    /** When Updates last looked, in milliseconds since 1970 (0 for never). */
+    public long LastUpdateCheck
+    {
+        get => GetLong(KeyLastUpdateCheck, 0);
+        set => Put(KeyLastUpdateCheck, value);
     }
 
     /** The shape globe.setLayers() takes: each layer's key to whether it is shown. */

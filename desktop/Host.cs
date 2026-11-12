@@ -56,6 +56,11 @@ abstract class Host
     CancellationTokenSource? loadCancel;
     /** Bumped by each satellite push, so a slow, stale one can't land last. */
     int pushGeneration;
+    /** A newer version found on GitHub (Updates), offered on the globe until installed. */
+    Release? availableUpdate;
+    bool checkingForUpdate;
+    /** True while an update downloads and installs, so it isn't started twice. */
+    bool updating;
 
     /** Downloads changed since last shown: shown at most every 100 ms, as reports come every 32 kB. */
     volatile bool downloadsChanged;
@@ -99,6 +104,9 @@ abstract class Host
     protected abstract void StartLocation();
 
     protected abstract void StopLocation();
+
+    /** Closes the window and ends the app, as closing it would (after an update, which Updates.Restart starts). */
+    protected abstract void Quit();
 
     /** For a shell to call when the window is minimised or restored. */
     public void SetMinimised(bool value) => minimised = value;
@@ -278,6 +286,10 @@ abstract class Host
             case "locationDenied":
                 OnLocationDenied();
                 break;
+            // The Update button of the offer globe.showUpdate() made.
+            case "installUpdate":
+                StartUpdate(availableUpdate);
+                break;
         }
     }
 
@@ -313,6 +325,7 @@ abstract class Host
         PushCompass();
         PushFavourites();
         PushSatellites();
+        OfferUpdate();
         PageReady();
     }
 
@@ -333,6 +346,91 @@ abstract class Host
         PushNight();
         LoadSatellites();
         PassAlerts.Reschedule(settings);
+        CheckForUpdate();
+    }
+
+    // ---- Updates of the app itself (Updates) ----
+
+    /** Looks for a newer version on GitHub, at most once a day and only if the user lets it, and offers it. */
+    async void CheckForUpdate()
+    {
+        if (!settings.CheckUpdates || settings.OfflineMode || checkingForUpdate || updating || availableUpdate != null) return;
+        if (App.Now() - settings.LastUpdateCheck < Updates.CheckEveryMs) return;
+        checkingForUpdate = true;
+        try
+        {
+            var newer = await Task.Run(Updates.Newer);
+            settings.LastUpdateCheck = App.Now();
+            Post(() =>
+            {
+                availableUpdate = newer;
+                OfferUpdate();
+            });
+        }
+        catch (Exception e)
+        {
+            // Tried again next time the window opens or settings close.
+            App.Warn(LogTag, "Checking for an update failed", e);
+        }
+        finally
+        {
+            checkingForUpdate = false;
+        }
+    }
+
+    /** Shows the available update on the globe (globe.showUpdate), whose Update button calls installUpdate. */
+    void OfferUpdate()
+    {
+        if (availableUpdate is not { } release || !pageReady || updating) return;
+        var offer = new JsonObject
+        {
+            ["title"] = Strings.Get("update_available", release.Version),
+            ["detail"] = Strings.Get("update_available_detail", Http.Version),
+            ["update"] = Strings.Get("update_install"),
+            ["later"] = Strings.Get("update_later"),
+        };
+        RunJs($"globe.showUpdate({offer.ToJsonString()})");
+    }
+
+    /**
+     * Downloads the release (in the progress panel), checks it and puts it in place of this program
+     * (Updates.Install), then starts it and closes this one.
+     */
+    async void StartUpdate(Release? release)
+    {
+        if (release == null || updating) return;
+        updating = true;
+        if (pageReady) RunJs("globe.hideUpdate()");
+        try
+        {
+            await Task.Run(() => Updates.Install(release, downloadTracker));
+        }
+        catch (Exception e)
+        {
+            App.Warn(LogTag, "Updating failed", e);
+            Post(() =>
+            {
+                updating = false;
+                Toast(Strings.Get("update_failed", e.Message));
+                OfferUpdate();
+            });
+            return;
+        }
+        Post(() => Toast(Strings.Get("update_installing", release.Version)));
+        // Long enough to see the download finish and the message, then the new version.
+        await Task.Delay(1500);
+        Post(() =>
+        {
+            try
+            {
+                Updates.Restart();
+            }
+            catch (Exception e)
+            {
+                App.Warn(LogTag, "Starting the new version failed", e);
+            }
+            Quit();
+        });
     }
 
     /**
@@ -493,7 +591,11 @@ abstract class Host
         var failed = all.Count(d => d.State == Download.States.Failed);
         var current = all.FirstOrDefault(d => d.State == Download.States.Running) ?? waiting.FirstOrDefault() ?? all[^1];
         var done = all.All(d => !d.Active);
-        var summary = !done ? Strings.Get("downloads_running", Math.Min(finished + 1, all.Count), all.Count)
+        // The app's own update: no saved copy to fall back on, and no count of data files.
+        var summary = current.App ? (!done ? Strings.Get("update_downloading")
+                : current.State == Download.States.Failed ? Strings.Get("update_download_failed")
+                : Strings.Get("update_downloaded"))
+            : !done ? Strings.Get("downloads_running", Math.Min(finished + 1, all.Count), all.Count)
             : failed > 0 ? Strings.Get("downloads_failed", failed, all.Count)
             : Strings.Get("downloads_finished");
         var known = current.TotalBytes > 0;
@@ -505,7 +607,7 @@ abstract class Host
             Download.States.Running => Strings.Get("download_starting"),
             Download.States.Done => Strings.Get("download_done", FormatSize(current.BytesRead)),
             Download.States.NotUpdated => Strings.Get("download_not_updated"),
-            _ => Strings.Get("download_failed"),
+            _ => Strings.Get(current.App ? "download_failed_app" : "download_failed"),
         };
         // 0 to 1, or -1 for under way at an unknown size.
         var progress = current.State switch
@@ -569,6 +671,20 @@ abstract class Host
                 var text = Json.Text(message, "text");
                 var answer = await SettingsPage.Find(settings, text);
                 Post(() => RunSettingsJs($"settingsPage.placeFound({answer.ToJsonString()})"));
+                break;
+            // The settings page's Check now: what it found, for settingsPage.updateChecked.
+            case "checkUpdate":
+                var check = await SettingsPage.CheckUpdate(settings);
+                Post(() =>
+                {
+                    if (check.Release != null) availableUpdate = check.Release;
+                    RunSettingsJs($"settingsPage.updateChecked({check.Answer.ToJsonString()})");
+                });
+                break;
+            // Its Update: back to the globe, where the progress panel shows the download.
+            case "installUpdate":
+                CloseSettings();
+                StartUpdate(availableUpdate);
                 break;
         }
     }

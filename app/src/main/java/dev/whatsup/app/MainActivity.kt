@@ -101,6 +101,11 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private var pushJob: Job? = null
     private var shownLayers: String? = null
     private lateinit var downloadsPanel: LinearLayout
+    /** A newer version found on GitHub (Updates), offered on the globe until installed. */
+    private var availableUpdate: Release? = null
+    private var checkingForUpdate = false
+    /** True while an update downloads, so it isn't started twice. */
+    private var updating = false
     /** Pending removal of the downloads panel after everything has finished. */
     private val clearDownloads = Runnable { downloadTracker.clearFinished() }
 
@@ -273,6 +278,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                 pushFavourites()
                 backCameraFov()?.let { (long, short) -> runJs("globe.setCameraFov($long, $short)") }
                 pushSatellites()
+                offerUpdate()
             }
         }
         webView.loadUrl("https://${WebViewAssetLoader.DEFAULT_DOMAIN}/assets/globe.html")
@@ -339,6 +345,87 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         // Pass alerts may have been turned on or off in SettingsActivity.
         PassAlerts.reschedule(this)
         if (orientationWanted) startOrientation()
+        // An update asked for in SettingsActivity, or else the daily look for one.
+        val requested = Updates.requested
+        Updates.requested = null
+        if (requested != null) startUpdate(requested) else checkForUpdate()
+    }
+
+    // ---- Updates of the app itself (Updates) ----
+
+    /** Looks for a newer version on GitHub, at most once a day and only if the user lets it, and offers it. */
+    private fun checkForUpdate() {
+        if (!settings.checkUpdates || settings.offlineMode || checkingForUpdate || availableUpdate != null) return
+        if (System.currentTimeMillis() - settings.lastUpdateCheck < Updates.CHECK_EVERY_MS) return
+        checkingForUpdate = true
+        lifecycleScope.launch {
+            try {
+                val newer = withContext(Dispatchers.IO) { Updates.newer() }
+                settings.lastUpdateCheck = System.currentTimeMillis()
+                availableUpdate = newer
+                offerUpdate()
+            } catch (e: Exception) {
+                // Tried again next time the app comes to the front.
+                Log.w(TAG, "Checking for an update failed", e)
+            } finally {
+                checkingForUpdate = false
+            }
+        }
+    }
+
+    /** Shows the available update on the globe (globe.showUpdate), whose Update button calls Bridge.installUpdate. */
+    private fun offerUpdate() {
+        val release = availableUpdate ?: return
+        if (!pageReady || updating) return
+        val offer = JSONObject()
+            .put("title", getString(R.string.update_available, release.version))
+            .put("detail", getString(R.string.update_available_detail, BuildConfig.VERSION_NAME))
+            .put("update", getString(R.string.update_install))
+            .put("later", getString(R.string.update_later))
+        runJs("globe.showUpdate($offer)")
+    }
+
+    /**
+     * Downloads the release's APK (in the progress panel), checks it against GitHub's checksum, and
+     * hands it to the system's installer, which asks the user, and the first time to allow WhatsUp
+     * to install apps.
+     */
+    private fun startUpdate(release: Release) {
+        if (updating) return
+        updating = true
+        if (pageReady) runJs("globe.hideUpdate()")
+        val file = java.io.File(cacheDir, "update/whatsup.apk")
+        lifecycleScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    downloadTracker.downloadTo(release.url, file, Updates.DOWNLOAD_KEY, "whatsup-${release.version}.apk", app = true)
+                    if (release.sha256 != null && Updates.sha256(file) != release.sha256) {
+                        file.delete()
+                        throw java.io.IOException(getString(R.string.update_corrupt))
+                    }
+                }
+            }
+            updating = false
+            result.onFailure { e ->
+                Log.w(TAG, "Updating failed", e)
+                Toast.makeText(this@MainActivity, getString(R.string.update_failed, e.message ?: e.javaClass.simpleName), Toast.LENGTH_LONG).show()
+                offerUpdate()
+            }
+            result.onSuccess { install(file, release) }
+        }
+    }
+
+    private fun install(file: java.io.File, release: Release) {
+        val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", file)
+        val intent = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            Toast.makeText(this, getString(R.string.update_installing, release.version), Toast.LENGTH_SHORT).show()
+            startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(this, getString(R.string.update_failed, e.message ?: "no installer"), Toast.LENGTH_LONG).show()
+        }
     }
 
     override fun onPause() {
@@ -510,6 +597,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         val done = all.none { it.active }
 
         downloadsPanel.findViewById<TextView>(R.id.download_summary).text = when {
+            // The app's own update: no saved copy to fall back on, and no count of data files.
+            current.app && !done -> getString(R.string.update_downloading)
+            current.app && current.state == Download.State.FAILED -> getString(R.string.update_download_failed)
+            current.app -> getString(R.string.update_downloaded)
             !done -> getString(R.string.downloads_running, minOf(finished + 1, all.size), all.size)
             failed > 0 -> getString(R.string.downloads_failed, failed, all.size)
             else -> getString(R.string.downloads_finished)
@@ -541,7 +632,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             }
             Download.State.DONE -> getString(R.string.download_done, size(download.bytesRead))
             Download.State.NOT_UPDATED -> getString(R.string.download_not_updated)
-            Download.State.FAILED -> getString(R.string.download_failed)
+            Download.State.FAILED -> getString(if (download.app) R.string.download_failed_app else R.string.download_failed)
         }
         val bar = row.findViewById<ProgressBar>(R.id.download_progress)
         bar.isIndeterminate = download.state == Download.State.RUNNING && !known
@@ -640,6 +731,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     /** Calls from the page. They arrive on a WebView thread, so each moves to the main thread. */
     private inner class Bridge {
+        /** The Update button of the offer globe.showUpdate() made. */
+        @JavascriptInterface
+        fun installUpdate() = runOnUiThread { availableUpdate?.let(::startUpdate) }
+
         /** Whether the page has a panel open that the back button should close. */
         @JavascriptInterface
         fun setOverlayOpen(open: Boolean) = runOnUiThread { closePanel.isEnabled = open }

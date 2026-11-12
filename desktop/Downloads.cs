@@ -1,7 +1,11 @@
 namespace WhatsUp;
 
-/** A download, as the progress panel shows it. TotalBytes is -1 when the server doesn't say. */
-record Download(string File, long BytesRead, long TotalBytes, Download.States State)
+/**
+ * A download, as the progress panel shows it. TotalBytes is -1 when the server doesn't say. App
+ * marks a new version of the app itself (Updates), which the panel words differently: there is no
+ * saved copy to fall back on.
+ */
+record Download(string File, long BytesRead, long TotalBytes, Download.States State, bool App = false)
 {
     /** Waiting or under way. */
     public bool Active => State is States.Queued or States.Running;
@@ -65,10 +69,10 @@ class DownloadTracker
         all.Where(d => !(d.Value.State == Download.States.Queued && (key == null || d.Key == key))).ToList());
 
     /** Updates the key's entry, keeping whatever isn't given. */
-    public void Report(string key, string name, long? bytesRead = null, long? totalBytes = null, Download.States state = Download.States.Running) =>
+    public void Report(string key, string name, long? bytesRead = null, long? totalBytes = null, Download.States state = Download.States.Running, bool app = false) =>
         Update(all =>
         {
-            var previous = all.FirstOrDefault(d => d.Key == key).Value ?? new Download(name, 0, -1, state);
+            var previous = all.FirstOrDefault(d => d.Key == key).Value ?? new Download(name, 0, -1, state, app);
             return Put(all, key, previous with
             {
                 BytesRead = bytesRead ?? previous.BytesRead,
@@ -79,26 +83,26 @@ class DownloadTracker
 
     /**
      * Downloads url to file (through a temporary file, so a failed download leaves the old copy),
-     * reporting progress under key as name. Blocking; call off the UI thread.
+     * reporting progress under key as name (app for the app itself). Blocking; call off the UI thread.
      */
-    public void DownloadTo(string url, string file, string key, string name)
+    public void DownloadTo(string url, string file, string key, string name, bool app = false)
     {
         var partial = file + ".part";
         try
         {
-            Report(key, name, bytesRead: 0, totalBytes: -1);
+            Report(key, name, bytesRead: 0, totalBytes: -1, app: app);
             Directory.CreateDirectory(Path.GetDirectoryName(file)!);
             using (var output = File.Create(partial))
             {
-                Http.Get(url, output, readTimeoutMs: 60_000, onProgress: (read, total) => Report(key, name, read, total));
+                Http.Get(url, output, readTimeoutMs: 60_000, onProgress: (read, total) => Report(key, name, read, total, app: app));
             }
             File.Move(partial, file, overwrite: true);
-            Report(key, name, state: Download.States.Done);
+            Report(key, name, state: Download.States.Done, app: app);
         }
         catch (Exception)
         {
-            File.Delete(partial);
-            Report(key, name, state: Download.States.Failed);
+            try { File.Delete(partial); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            Report(key, name, state: Download.States.Failed, app: app);
             throw;
         }
     }

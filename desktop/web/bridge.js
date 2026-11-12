@@ -13,7 +13,7 @@
     const listeners = [];
     const calls = [
         'setOverlayOpen', 'setMapButtonsHidden', 'setOrientationUpdates', 'setPassAlerts', 'setFavourites',
-        'setCompassOffset', 'loadConjunctions',
+        'setCompassOffset', 'loadConjunctions', 'installUpdate',
     ];
     window.Android = Object.fromEntries(calls.map(call => [call, (...args) => {
         post(call, ...args);

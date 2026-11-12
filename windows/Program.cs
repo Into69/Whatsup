@@ -7,6 +7,8 @@ static class Program
     [STAThread]
     static void Main()
     {
+        // After an update: the old version first ends, then its leftover goes.
+        Updates.AfterRestart(Environment.GetCommandLineArgs());
         // One window: opening WhatsUp again (or clicking a pass alert) brings the open one forward.
         using var single = new Mutex(true, @"Local\WhatsUp.Windows", out var first);
         if (!first)

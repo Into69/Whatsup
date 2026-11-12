@@ -160,6 +160,16 @@ class Settings(context: Context) {
         get() = prefs.getString(KEY_AIRCRAFT_RECEIVER, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_AIRCRAFT_RECEIVER, value.trim()).apply()
 
+    /** Look for a newer WhatsUp on GitHub once a day, and offer it (Updates). */
+    var checkUpdates: Boolean
+        get() = prefs.getBoolean(KEY_CHECK_UPDATES, true)
+        set(value) = prefs.edit().putBoolean(KEY_CHECK_UPDATES, value).apply()
+
+    /** When Updates last looked, in milliseconds since 1970 (0 for never). */
+    var lastUpdateCheck: Long
+        get() = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0)
+        set(value) = prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, value).apply()
+
     /** The shape globe.setLayers() takes: each layer's key to whether it is shown. */
     fun layersJson(): JSONObject = JSONObject().apply {
         for (layer in DisplayLayer.entries) put(layer.key, isShown(layer))
@@ -185,5 +195,7 @@ class Settings(context: Context) {
         const val KEY_MANUAL_LABEL = "manualLabel"
         const val KEY_MANUAL_SOURCE = "manualSource"
         const val KEY_USE_MANUAL_LOCATION = "useManualLocation"
+        const val KEY_CHECK_UPDATES = "checkUpdates"
+        const val KEY_LAST_UPDATE_CHECK = "lastUpdateCheck"
     }
 }

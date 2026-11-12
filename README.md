@@ -8,7 +8,7 @@ A satellite tracker on a 3D globe, centred on where you are, for Android, Window
 
 **Linux (64-bit Intel/AMD): [download WhatsUp-linux-x64.tar.gz](https://github.com/Into69/Whatsup/releases/latest/download/WhatsUp-linux-x64.tar.gz)**. Unpack it and run `whatsup/whatsup`, or `whatsup/install.sh` to put it in your app menu (`install.sh --remove` takes it out again). It needs WebKitGTK, which most desktops already have; if not: `sudo apt install libwebkit2gtk-4.1-0` (Debian, Ubuntu), `sudo dnf install webkit2gtk4.1` (Fedora) or `sudo pacman -S webkit2gtk-4.1` (Arch). It keeps its settings in `~/.local/share/whatsup` and its downloads in `~/.cache/whatsup`.
 
-All three are attached to each [release](https://github.com/Into69/Whatsup/releases); the links above always fetch the newest.
+All three are attached to each [release](https://github.com/Into69/Whatsup/releases); the links above always fetch the newest. Once installed, WhatsUp looks for a newer release once a day (Settings › About, where you can also check now or turn it off) and offers it: Update downloads it, with the same progress bar as the data downloads, and installs it. On Android the system asks first, and the first time to allow WhatsUp to install apps; on Windows and Linux it replaces itself and restarts.
 
 ## What it does
 
@@ -42,6 +42,8 @@ gradlew assembleDebug
 ```
 
 The APK is written to `app/build/outputs/apk/debug/whatsup.apk`.
+
+Each release needs a new `versionName` (and `versionCode`) in `app/build.gradle.kts`, tagged `v<versionName>`: the apps offer an update when the latest release's tag is newer than their own version, so files replaced in an existing release reach no one.
 
 Windows and Linux need the .NET 10 SDK, on any system:
 

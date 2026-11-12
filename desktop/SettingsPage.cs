@@ -59,6 +59,7 @@ static class SettingsPage
             },
             ["passAlerts"] = settings.PassAlerts,
             ["favouriteAlerts"] = settings.FavouriteAlerts,
+            ["checkUpdates"] = settings.CheckUpdates,
         };
     }
 
@@ -88,6 +89,9 @@ static class SettingsPage
                 return $"settingsPage.locationSource({Quote(DescribeLocationSource(settings))})";
             case "offlineMode":
                 settings.OfflineMode = On();
+                break;
+            case "checkUpdates":
+                settings.CheckUpdates = On();
                 break;
             case "tileSet":
                 settings.TileSet = TileSets.ById(Text());
@@ -136,6 +140,28 @@ static class SettingsPage
             ["message"] = DescribePlace(place),
             ["source"] = DescribeLocationSource(settings),
         };
+    }
+
+    /**
+     * Check now: whether GitHub has a newer version. The answer for the page is { text, update }:
+     * what to say, and whether its button now updates; Release is the newer version, if any.
+     */
+    public static async Task<(Release? Release, JsonObject Answer)> CheckUpdate(Settings settings)
+    {
+        static JsonObject Answer(string text, bool update = false) => new() { ["text"] = text, ["update"] = update };
+        if (settings.OfflineMode) return (null, Answer(Strings.Get("update_offline")));
+        try
+        {
+            var latest = await Task.Run(Updates.Latest);
+            settings.LastUpdateCheck = App.Now();
+            if (latest == null || !Updates.IsNewer(latest.Version, Http.Version)) return (null, Answer(Strings.Get("update_current", Http.Version)));
+            return (latest, Answer(Strings.Get("update_available", latest.Version) + "\n" + Strings.Get("update_available_detail", Http.Version), update: true));
+        }
+        catch (Exception e)
+        {
+            App.Warn("SettingsPage", "Checking for an update failed", e);
+            return (null, Answer(Strings.Get("update_check_failed", e.Message)));
+        }
     }
 
     static string DescribeLocationSource(Settings settings)

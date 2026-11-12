@@ -12,6 +12,8 @@ static class Program
         TaskScheduler.UnobservedTaskException += (_, e) => App.Warn("Unhandled", e.Exception.ToString());
         Strings.Platform = LinuxText.Strings;
         PassAlerts.Scheduler = new SystemdAlerts();
+        // After an update: the old version first ends.
+        Updates.AfterRestart(Environment.GetCommandLineArgs());
         // One window: opening WhatsUp again brings the open one forward.
         if (Instance.TellOther()) return 0;
         WorkAroundWsl();

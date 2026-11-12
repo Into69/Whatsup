@@ -11,6 +11,8 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- Offline mode: whether to load map tiles from the WebView's cache first. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Installing a newer WhatsUp from GitHub (Updates); Android asks the user the first time. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!--
         Cleartext HTTP is allowed for the user's own ADS-B receiver (Settings > Aircraft), which on a
@@ -41,5 +43,16 @@
         <receiver
             android:name=".PassAlertReceiver"
             android:exported="false" />
+
+        <!-- Hands a downloaded update (cache/update/) to the system's installer. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_paths" />
+        </provider>
     </application>
 </manifest>

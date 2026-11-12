@@ -90,6 +90,21 @@
         .transit .pass-seen { color: #ffb347; }
         .transit.visible .pass-seen { color: #7cf29c; }
 
+        /* A newer version of the app on offer (updates.js), at the top, over everything else. */
+        .update-offer {
+            position: absolute; left: 8px; right: 72px; top: var(--safe-top); z-index: 10;
+            max-width: 460px; margin: 0 auto;
+            background: var(--panel); border: 1px solid var(--accent); border-radius: 14px; padding: 12px 14px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, .5);
+        }
+        .update-text b { font-size: 15px; }
+        .update-detail { margin-top: 4px; opacity: .75; }
+        .update-buttons { display: flex; gap: 8px; margin-top: 10px; }
+        .update-buttons button {
+            flex: 1; padding: 8px; border-radius: 10px; border: 1px solid var(--line); background: transparent;
+        }
+        .update-buttons button.on { background: var(--accent); border-color: var(--accent); color: #05070d; font-weight: 600; }
+
         /* Search (panels.js). */
         .search {
             /* Right of the margin is MainActivity's column of buttons. */
@@ -299,5 +314,6 @@
 <script src="time.js"></script>
 <script src="panels.js"></script>
 <script src="inview.js"></script>
+<script src="updates.js"></script>
 </body>
 </html>
