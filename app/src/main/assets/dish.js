@@ -7,7 +7,8 @@
 //
 // Tilt comes from the accelerometer and is good to a fraction of a degree. Heading comes from the
 // magnetometer: it is corrected for declination (skyview.js), but metal nearby (the dish itself) bends
-// it, so it can be calibrated on the Sun or Moon, or nudged by hand. The correction is saved.
+// it, so it can be calibrated on the Sun or Moon (lined up over the camera, lineup.js), or nudged by
+// hand. The correction is saved.
 //
 // Always for the real time, whatever time.js's clock says: a dish is aligned now.
 
@@ -194,9 +195,16 @@ function angleDifference(a, b) {
     return ((a - b) % 360 + 540) % 360 - 180;
 }
 
-/** First tap: aim at the body. Second tap (now "Set"): take the calibration. */
+/**
+ * Lines the compass up on the body over the camera (lineup.js). Without a camera, the old way: first
+ * tap, aim at the body; second tap (now "Set"), take the calibration.
+ */
 function startCalibration(body) {
-    if (dish.calibrating === body) finishCalibration(); else dish.calibrating = body;
+    if (dish.calibrating === body) finishCalibration();
+    else {
+        dish.calibrating = null;
+        openLineUp(body, () => { dish.calibrating = body; });
+    }
 }
 
 /** Sun or Moon now (real time): its azimuth and elevation from here. */
@@ -254,7 +262,7 @@ function drawDish() {
     const calibrationHint = dish.calibrating === 'sun'
         ? "Aim at the Sun without looking at it: turn until the phone's shadow is as small as it gets, then tap Set."
         : dish.calibrating === 'moon'
-            ? 'Aim at the Moon (sky view\'s camera helps line it up), then tap Set.'
+            ? 'Aim at the Moon, then tap Set.'
             : `Headings are corrected by the declination here (${Math.abs(orientation.declination).toFixed(1)}°${orientation.declination >= 0 ? 'E' : 'W'}` +
               `${orientation.located ? '' : ', without a location yet'}) and your calibration (${orientation.offset >= 0 ? '+' : ''}${orientation.offset.toFixed(1)}°). ` +
               'Metal, like the dish itself, bends the compass: calibrate a few metres from it.';

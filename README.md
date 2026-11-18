@@ -17,7 +17,7 @@ All three are attached to each [release](https://github.com/Into69/Whatsup/relea
 - Tap a satellite for its details, where to point at it from where you are (azimuth, elevation, skew), its next pass and any close approach.
 - Sky view: hold the phone up to see what is overhead, over the camera if you like, with the ground shaded, the real skyline of hills and mountains (what they hide is marked, there and in the in-view list), the geostationary arc, the planets and, if you like, the constellations.
 - Red night mode (the moon button) turns the whole app red, to keep your eyes dark-adapted outside.
-- Dish aligner: a guide for pointing a dish at a satellite, with compass calibration on the Sun or Moon.
+- Dish aligner: a guide for pointing a dish at a satellite, with compass calibration on the Sun or Moon: over the camera's picture, slide the drawn Sun or Moon sideways onto the real one (only the heading moves).
 - Pass predictions and notifications for the ISS and starred satellites.
 - Time travel from a day back to a week ahead; upcoming launches; close approaches between objects in orbit.
 - In view: a list of everything above your horizon now (line of sight), starred first.

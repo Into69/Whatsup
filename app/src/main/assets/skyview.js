@@ -92,15 +92,20 @@ function headingCorrection() {
 function correctOrientation() {
     const r = orientation.raw;
     if (!r) return;
-    const c = headingCorrection() * Math.PI / 180;
+    orientation.target = turnHeading(r, headingCorrection());
+    if (!orientation.rotation) orientation.rotation = orientation.target;
+}
+
+/** A device-to-world rotation turned about the vertical so the headings it gives grow by `degrees`. */
+function turnHeading(r, degrees) {
+    const c = degrees * Math.PI / 180;
     const cos = Math.cos(c), sin = Math.sin(c);
     // World vectors turned so azimuths grow by c: east' = east cos c + north sin c, and so on.
-    orientation.target = [
+    return [
         cos * r[0] + sin * r[3], cos * r[1] + sin * r[4], cos * r[2] + sin * r[5],
         -sin * r[0] + cos * r[3], -sin * r[1] + cos * r[4], -sin * r[2] + cos * r[5],
         r[6], r[7], r[8],
     ];
-    if (!orientation.rotation) orientation.rotation = orientation.target;
 }
 
 /** Moves the drawn orientation on towards the sensor's; sky view and the dish aligner call it each frame. */
@@ -324,8 +329,7 @@ function setCameraFov(long, short) {
  * Pixels on screen per unit of tan(angle) off the middle: from the camera's field of view while it
  * is on, so the drawing lines up with its picture (shown with object-fit: cover), else a fixed view.
  */
-function skyFocal(width, height) {
-    const video = sky.video;
+function skyFocal(width, height, video = sky.video) {
     if (video?.videoWidth) {
         const fovLong = (sky.cameraFov?.[0] ?? DEFAULT_CAMERA_FOV) * Math.PI / 180;
         const vw = video.videoWidth, vh = video.videoHeight;

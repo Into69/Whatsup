@@ -866,7 +866,7 @@ satelliteListeners.push(updateLegend);
 let overlayOpen = false;
 
 function overlaysChanged() {
-    const open = !!(sheet.node || searchNode || inView.node || calibration.node || sky.open || dish.open || events.node || timeBar.node);
+    const open = !!(sheet.node || searchNode || inView.node || calibration.node || lineUp.node || sky.open || dish.open || events.node || timeBar.node);
     if (sheet.node) legend.style.display = 'none'; else updateLegend();
     if (open === overlayOpen) return;
     overlayOpen = open;
@@ -874,11 +874,12 @@ function overlaysChanged() {
 }
 
 /**
- * Closes the topmost panel: compass calibration, search, in view, the dish aligner, events, sky view, the time bar, the open
+ * Closes the topmost panel: lining up on the Sun or Moon, compass calibration, search, in view, the dish aligner, events, sky view, the time bar, the open
  * legend, then the passes list, then the selection.
  */
 function back() {
-    if (calibration.node) closeCalibration();
+    if (lineUp.node) closeLineUp();
+    else if (calibration.node) closeCalibration();
     else if (searchNode) closeSearch();
     else if (inView.node) closeInView();
     else if (dish.open) closeDish();

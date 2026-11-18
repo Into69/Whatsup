@@ -69,6 +69,12 @@ function openCalibration() {
     const done = el('button', '', 'Done');
     done.addEventListener('click', closeCalibration);
     const buttons = el('div', 'sheet-buttons');
+    // The figure 8 makes the compass steady; lining up on the Sun or Moon makes it point true.
+    for (const body of ['sun', 'moon']) {
+        const button = el('button', `calibration-${body}`, `Line up on ${bodyName(body)}`);
+        button.addEventListener('click', () => openLineUp(body));
+        buttons.append(button);
+    }
     buttons.append(done);
     node.append(header, figure,
         el('div', 'sheet-line', 'Hold the phone out and trace a big figure 8 in the air, turning your wrist so it faces every way: '
@@ -77,6 +83,7 @@ function openCalibration() {
         el('div', 'sheet-line calibration-field'),
         el('div', 'sheet-line sheet-hint calibration-coverage-label'), meter,
         el('div', 'sheet-line calibration-result'),
+        el('div', 'sheet-line sheet-hint', 'Still pointing a few degrees off? Line it up on the Sun or Moon with the camera.'),
         buttons);
     document.body.appendChild(node);
     calibration.node = node;
@@ -146,6 +153,11 @@ function refreshCalibration() {
     node.querySelector('.calibration-meter div').style.width = `${Math.round(coverage * 100)}%`;
     node.querySelector('.calibration-coverage-label').textContent = coverage >= 1
         ? 'Every way covered.' : `Ways faced so far: ${Math.round(coverage * 100)}%`;
+
+    // Lining up: only on a body above the horizon.
+    for (const body of ['sun', 'moon']) {
+        node.querySelector(`.calibration-${body}`).disabled = !here || bodyAzEl(body)[1] < 2;
+    }
 
     const result = node.querySelector('.calibration-result');
     const improved = orientation.status === 3 && (calibration.startStatus < 3 || coverage >= 1);
