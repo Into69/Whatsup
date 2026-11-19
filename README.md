@@ -17,11 +17,13 @@ All three are attached to each [release](https://github.com/Into69/Whatsup/relea
 - Tap a satellite for its details, where to point at it from where you are (azimuth, elevation, skew), its next pass and any close approach.
 - Sky view: hold the phone up to see what is overhead, over the camera if you like, with the ground shaded, the real skyline of hills and mountains (what they hide is marked, there and in the in-view list), the geostationary arc, the planets and, if you like, the constellations.
 - Red night mode (the moon button) turns the whole app red, to keep your eyes dark-adapted outside.
-- Dish aligner: a guide for pointing a dish at a satellite, with an optional tone that beeps faster and higher as you close in (steady on target), and compass calibration on the Sun or Moon: over the camera's picture, slide the drawn Sun or Moon sideways onto the real one (only the heading moves).
+- Dish aligner: a guide for pointing a dish at a satellite, with an optional tone that beeps faster and higher as you close in (steady on target), and compass calibration on the Sun or Moon: over the camera's picture, the drawn Sun or Moon moves sideways onto the real one, found in the picture automatically or slid by hand (only the heading moves). It says when and where the compass was last lined up, and suggests doing it again after a month or somewhere new.
 - Pass predictions and notifications for the ISS and starred satellites.
 - Time travel from a day back to a week ahead; upcoming launches; close approaches between objects in orbit.
 - In view: a list of everything above your horizon now (line of sight), starred first.
 - Live aircraft from ADS-B within a radius you choose (5–250 NM), from adsb.lol, adsb.fi or your own receiver: on the globe, in sky view, in search and the in-view list, with where to look for each. Tap one for its airframe, route, the track it has flown and how long it has to go.
+- Your own Starlink dish (Settings, on the dish's network): in sky view, its obstruction map over the real sky, where it points and where Starlink wants it to, and its reach round where it really points; Settings says whether it is aligned, its alerts, and how much of its sky is obstructed. Read from the dish's local API (gRPC-web at 192.168.100.1:9201).
+- Your own OneWeb terminal (Settings; Hughes HL1120, on its network): in sky view, the satellite it is using with its signal (SINR) and the ones it may hand over to, and a signal map of your sky that builds up as you use it, from where each satellite was and how good the signal was (a dropped link counts against that direction). Settings shows its pointing score and availability, and can copy the terminal's raw answers. Read from its local JSON API (192.168.100.1/api).
 
 ## On Windows and Linux
 

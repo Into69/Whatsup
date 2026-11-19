@@ -110,6 +110,11 @@ const layers = {
     launches: true, myLocation: true, dayNight: true, stars: true, trueScale: false, favouritesOnly: false,
     constellations: false, skyline: true,
     aircraft: false,
+    /** Not drawn as such: the user's Starlink dish is read for sky view (starlink.js). */
+    starlinkDish: false,
+    /** Likewise the user's OneWeb terminal (oneweb.js), and when its signal map was last cleared (ms). */
+    onewebTerminal: false,
+    onewebMapClearedAt: 0,
 };
 const layerListeners = [applyLocationLayer];
 

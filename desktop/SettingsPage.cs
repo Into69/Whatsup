@@ -60,6 +60,16 @@ static class SettingsPage
             ["passAlerts"] = settings.PassAlerts,
             ["favouriteAlerts"] = settings.FavouriteAlerts,
             ["checkUpdates"] = settings.CheckUpdates,
+            ["starlink"] = new JsonObject
+            {
+                ["on"] = settings.StarlinkDish,
+                ["address"] = settings.StarlinkAddress,
+            },
+            ["oneweb"] = new JsonObject
+            {
+                ["on"] = settings.OneWebTerminal,
+                ["address"] = settings.OneWebAddress,
+            },
         };
     }
 
@@ -104,6 +114,18 @@ static class SettingsPage
                 break;
             case "aircraftReceiver":
                 settings.AircraftReceiver = Text();
+                break;
+            case "starlinkDish":
+                settings.StarlinkDish = On();
+                break;
+            case "starlinkAddress":
+                settings.StarlinkAddress = Text();
+                break;
+            case "onewebTerminal":
+                settings.OneWebTerminal = On();
+                break;
+            case "onewebAddress":
+                settings.OneWebAddress = Text();
                 break;
             case "passAlerts":
             case "favouriteAlerts":
@@ -162,6 +184,93 @@ static class SettingsPage
             App.Warn("SettingsPage", "Checking for an update failed", e);
             return (null, Answer(Strings.Get("update_check_failed", e.Message)));
         }
+    }
+
+    /**
+     * The Starlink card's Check: reads the dish and says what it found ({ text }): connected, where it
+     * points and wants to, alerts, the map; or why not. Blocking: call off the UI thread.
+     */
+    public static JsonObject CheckStarlink(Settings settings)
+    {
+        var address = settings.StarlinkAddress;
+        var json = JsonNode.Parse(new StarlinkDish().Load(address))!.AsObject();
+        return new JsonObject { ["text"] = DescribeStarlink(address, json) };
+    }
+
+    static string DescribeStarlink(string address, JsonObject json)
+    {
+        var shown = address.Trim().Length > 0 ? address.Trim() : StarlinkDish.DefaultAddress;
+        if (json["error"] is JsonValue error) return Strings.Get("starlink_unreachable", shown, (string)error!);
+        var dish = json["dish"]!;
+        var software = (string?)dish["software"];
+        var lines = new List<string> { Strings.Get("starlink_connected", string.IsNullOrEmpty(software) ? "?" : software) };
+        var boresight = dish["alignment"]?["boresight"];
+        var desired = dish["alignment"]?["desired"];
+        static string AzEl(JsonNode d) => $"Az {(double)d["az"]!:0.0}° El {(double)d["el"]!:0.0}°";
+        if (boresight != null && desired != null)
+        {
+            var off = StarlinkDish.Separation(boresight, desired);
+            lines.Add(Strings.Get("starlink_pointing", AzEl(boresight), AzEl(desired),
+                off < 1 ? Strings.Get("starlink_aligned") : Strings.Get("starlink_off_by", $"{off:0.0}°")));
+        }
+        else
+        {
+            lines.Add(Strings.Get("starlink_no_alignment"));
+        }
+        if ((bool?)dish["stowed"] == true) lines.Add(Strings.Get("starlink_stowed"));
+        var alerts = (dish["alerts"] as JsonObject)?.Select(a => Strings.Get($"starlink_alert_{a.Key}")).ToList() ?? [];
+        if (alerts.Count > 0) lines.Add(Strings.Get("starlink_alerts", string.Join(", ", alerts)));
+        if (json["map"] is { } map)
+        {
+            var (seen, obstructed) = StarlinkDish.MapStats(map);
+            lines.Add(Strings.Get("starlink_map", $"{seen * 100:0}%", $"{obstructed * 100:0.0}%"));
+        }
+        else
+        {
+            var reason = (string?)json["mapError"];
+            lines.Add(Strings.Get("starlink_no_map", string.IsNullOrEmpty(reason) ? "?" : reason));
+        }
+        return string.Join("\n", lines);
+    }
+
+    /**
+     * The OneWeb card's Check: reads the terminal and says what it found ({ text, raw }: raw is every
+     * answer as it came, for Copy details). Blocking: call off the UI thread.
+     */
+    public static JsonObject CheckOneWeb(Settings settings)
+    {
+        var address = settings.OneWebAddress;
+        var json = new OneWebTerminal().LoadJson(address, raw: true);
+        return new JsonObject { ["text"] = DescribeOneWeb(address, json), ["raw"] = json.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }) };
+    }
+
+    static string DescribeOneWeb(string address, JsonObject json)
+    {
+        var shown = address.Trim().Length > 0 ? address.Trim() : OneWebTerminal.DefaultAddress;
+        if (json["error"] is JsonValue error) return Strings.Get("oneweb_unreachable", shown, (string)error!);
+        var t = json["terminal"]!;
+        var lines = new List<string> { Strings.Get("oneweb_connected") };
+        if ((long?)t["satellite"] is > 0 and var satellite)
+        {
+            var sinr = t["sinr"] is { } s ? $"{(double)s:0.0} dB" : "?";
+            lines.Add(Strings.Get("oneweb_satellite", satellite.ToString()!, t["trackId"]?.ToString() ?? "?", sinr));
+        }
+        else
+        {
+            lines.Add(Strings.Get("oneweb_no_satellite"));
+        }
+        if (t["pointingScore"] is { } score) lines.Add(Strings.Get("oneweb_pointing_score", $"{(double)score:0}"));
+        // Besides the one in use, which the list includes.
+        var next = (t["candidates"] as JsonArray)?.Select(c => (long)c!).Where(c => c != ((long?)t["satellite"] ?? 0)).ToList() ?? [];
+        if (next.Count > 0) lines.Add(Strings.Get("oneweb_candidates", string.Join(", ", next)));
+        if (t["availability"] is { } availability) lines.Add(Strings.Get("oneweb_availability", $"{(double)availability:0.0}%"));
+        if (t["pointing"] is { } p) lines.Add(Strings.Get("oneweb_pointing", $"Az {(double)p["az"]!:0.0}° El {(double)p["el"]!:0.0}°"));
+        // Grouped by why: "a, b (no such page)".
+        if (json["errors"] is JsonObject errors)
+        {
+            lines.Add(Strings.Get("oneweb_partly", string.Join("; ", errors.GroupBy(e => (string?)e.Value).Select(g => $"{string.Join(", ", g.Select(e => e.Key))} ({g.Key})"))));
+        }
+        return string.Join("\n", lines);
     }
 
     static string DescribeLocationSource(Settings settings)

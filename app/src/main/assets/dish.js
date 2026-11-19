@@ -232,11 +232,11 @@ function buildDish(sat) {
     const nudge = el('div', 'sheet-buttons');
     for (const [label, change] of [['−1°', -1], ['−0.1°', -0.1], ['+0.1°', 0.1], ['+1°', 1]]) {
         const button = el('button', '', label);
-        button.addEventListener('click', () => setCompassOffset(orientation.offset + change));
+        button.addEventListener('click', () => setCompassOffset(orientation.offset + change, 'hand'));
         nudge.append(button);
     }
     const reset = el('button', '', 'Reset');
-    reset.addEventListener('click', () => setCompassOffset(0));
+    reset.addEventListener('click', () => setCompassOffset(0, null));
     nudge.append(reset);
 
     node.append(
@@ -252,6 +252,7 @@ function buildDish(sat) {
         el('div', 'sheet-line dish-phone'),
         el('div', 'dish-section', 'Compass'),
         el('div', 'sheet-line dish-compass'),
+        el('div', 'sheet-line dish-lined-up'),
         el('div', 'sheet-line sheet-hint dish-calibration'),
         calibrate,
         nudge,
@@ -265,12 +266,52 @@ function aimHint() {
         : 'Lay the phone on the dish arm, screen up, its top edge pointing out along the arm, the way the dish looks.';
 }
 
-/** Saves a new compass calibration (degrees added to headings) through MainActivity. */
-function setCompassOffset(degrees) {
+/**
+ * Saves a new compass calibration (degrees added to headings) through MainActivity, noting how
+ * ('sun', 'moon' or 'hand'), when and where; `how` null (Reset) forgets the note.
+ */
+function setCompassOffset(degrees, how) {
     const rounded = Math.round(((degrees + 540) % 360 - 180) * 10) / 10;
     orientation.offset = rounded;
+    orientation.calibration = how ? { at: Date.now(), how, lat: here?.[1] ?? null, lon: here?.[0] ?? null } : null;
     correctOrientation();
+    // The note first: setCompassOffset sends both back (pushCompass).
+    window.Android?.noteCompassCalibration?.(JSON.stringify(orientation.calibration ?? {}));
     window.Android?.setCompassOffset(rounded);
+}
+
+/** Lining up again is suggested after this many days, or this far from where it was done. */
+const COMPASS_STALE_DAYS = 30, COMPASS_MOVED_KM = 1;
+
+/** Kilometres between two places on the Earth, in degrees. */
+function surfaceKm(lat1, lon1, lat2, lon2) {
+    const r = Math.PI / 180;
+    const a = Math.sin((lat2 - lat1) * r / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin((lon2 - lon1) * r / 2) ** 2;
+    return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+/**
+ * When and how the compass was last lined up, and whether to do it again: { text, stale }. Old, or
+ * done somewhere else (metal nearby, like a dish, bends it differently in each place), it is stale.
+ */
+function describeCompassCalibration() {
+    const c = orientation.calibration;
+    if (!c?.at) {
+        return {
+            text: orientation.offset ? `Calibrated ${signed(orientation.offset)}, when and where not known: worth lining up on the Sun or Moon again.`
+                : 'Not lined up yet: calibrate on the Sun or Moon for true headings.',
+            stale: true,
+        };
+    }
+    const how = { sun: 'Lined up on the Sun', moon: 'Lined up on the Moon', hand: 'Set by hand' }[c.how] ?? 'Calibrated';
+    const days = (Date.now() - c.at) / 86_400_000;
+    const ago = days < 1 ? 'today' : days < 2 ? 'yesterday' : `${Math.floor(days)} days ago`;
+    const km = here && c.lat != null ? surfaceKm(c.lat, c.lon, here[1], here[0]) : 0;
+    const moved = km > COMPASS_MOVED_KM;
+    const old = days > COMPASS_STALE_DAYS;
+    const where = moved ? `, ${km < 10 ? km.toFixed(1) : Math.round(km)} km from here` : '';
+    const advice = moved ? ': line up again here.' : old ? ': worth doing again.' : '.';
+    return { text: `${how} ${ago}${where} (${signed(orientation.offset)})${advice}`, stale: moved || old };
 }
 
 /**
@@ -328,7 +369,7 @@ function finishCalibration() {
     const [az] = bodyAzEl(dish.calibrating);
     const phone = phonePointing();
     // The phone, as corrected now, reads phone.az while pointing at the body's true azimuth.
-    setCompassOffset(orientation.offset + angleDifference(az, phone.az));
+    setCompassOffset(orientation.offset + angleDifference(az, phone.az), dish.calibrating);
     dish.calibrating = null;
 }
 
@@ -373,9 +414,12 @@ function drawDish() {
         : dish.calibrating === 'moon'
             ? 'Aim at the Moon, then tap Set.'
             : `Headings are corrected by the declination here (${Math.abs(orientation.declination).toFixed(1)}°${orientation.declination >= 0 ? 'E' : 'W'}` +
-              `${orientation.located ? '' : ', without a location yet'}) and your calibration (${orientation.offset >= 0 ? '+' : ''}${orientation.offset.toFixed(1)}°). ` +
+              `${orientation.located ? '' : ', without a location yet'}) and your calibration. ` +
               'Metal, like the dish itself, bends the compass: calibrate a few metres from it.';
     text('.dish-calibration', calibrationHint);
+    const lined = describeCompassCalibration();
+    text('.dish-lined-up', lined.text);
+    node.querySelector('.dish-lined-up').classList.toggle('warning', lined.stale);
     const accuracy = ['unreliable', 'low', 'medium', 'high'][orientation.status] ?? 'unknown';
     text('.dish-compass', `Accuracy ${accuracy}` +
         (orientation.headingError >= 0 ? `, about ±${Math.round(orientation.headingError)}°` : '') +

@@ -137,4 +137,55 @@
     <string name="night_vision_on">Red night mode: on</string>
     <string name="night_vision_off">Red night mode: off</string>
     <string name="show_buttons">Show buttons</string>
+
+    <!-- The user's own Starlink dish (StarlinkDish, starlink.js). -->
+    <string name="section_starlink">Starlink dish</string>
+    <string name="starlink_dish">Read my Starlink dish\nIn sky view: where your dish points, where Starlink wants it to point, its reach, and the obstructions it has seen. Works while this device is on the dish\'s network.</string>
+    <string name="starlink_address">Dish address</string>
+    <string name="starlink_address_hint">192.168.100.1</string>
+    <string name="starlink_address_note">Leave empty for the usual address. Only addresses on your own network.</string>
+    <string name="starlink_check">Check</string>
+    <string name="starlink_checking">Asking the dish…</string>
+    <string name="starlink_unreachable">Couldn\'t read the dish at %1$s: %2$s. Is this device on its Wi-Fi or network?</string>
+    <string name="starlink_connected">Connected to the dish (software %1$s).</string>
+    <string name="starlink_pointing">It points at %1$s; Starlink wants %2$s: %3$s.</string>
+    <string name="starlink_aligned">aligned</string>
+    <string name="starlink_off_by">%1$s off</string>
+    <string name="starlink_no_alignment">It doesn\'t say where it points.</string>
+    <string name="starlink_stowed">It is stowed.</string>
+    <string name="starlink_alerts">Alerts: %1$s.</string>
+    <string name="starlink_map">Obstruction map: %1$s of the sky seen so far, %2$s of that obstructed.</string>
+    <string name="starlink_no_map">No obstruction map: %1$s.</string>
+    <string name="starlink_alert_obstructed">obstructed</string>
+    <string name="starlink_alert_motorsStuck">motors stuck</string>
+    <string name="starlink_alert_mastNotNearVertical">mast not near vertical</string>
+    <string name="starlink_alert_heating">heating</string>
+    <string name="starlink_alert_thermalThrottle">too hot, slowed</string>
+    <string name="starlink_alert_thermalShutdown">too hot, off</string>
+    <string name="starlink_alert_powerSupplyThermalThrottle">power supply too hot</string>
+    <string name="starlink_alert_slowEthernet">slow Ethernet</string>
+    <string name="starlink_alert_softwareInstallPending">update waiting for a restart</string>
+    <string name="starlink_alert_movingTooFast">moving too fast</string>
+
+    <!-- The user's own OneWeb terminal (OneWebTerminal, oneweb.js). -->
+    <string name="section_oneweb">OneWeb terminal</string>
+    <string name="oneweb_terminal">Read my OneWeb terminal\nIn sky view: the satellite it is using and its signal, the ones it may hand over to, and a signal map that builds up from where the satellites were. Hughes HL1120 terminals, while this device is on the terminal\'s network.</string>
+    <string name="oneweb_address">Terminal address</string>
+    <string name="oneweb_address_hint">192.168.100.1</string>
+    <string name="oneweb_address_note">Leave empty for the usual address. Only addresses on your own network. Intellian and Kymeta terminals have no local API that WhatsUp can read.</string>
+    <string name="oneweb_check">Check</string>
+    <string name="oneweb_checking">Asking the terminal…</string>
+    <string name="oneweb_unreachable">Couldn\'t read the terminal at %1$s: %2$s. Is this device on its network?</string>
+    <string name="oneweb_connected">Connected to the terminal.</string>
+    <string name="oneweb_satellite">On satellite %1$s (track %2$s), SINR %3$s.</string>
+    <string name="oneweb_no_satellite">Not on a satellite right now.</string>
+    <string name="oneweb_pointing_score">Pointing score %1$s.</string>
+    <string name="oneweb_candidates">Next candidates: %1$s.</string>
+    <string name="oneweb_availability">Availability %1$s.</string>
+    <string name="oneweb_pointing">The antenna points at %1$s.</string>
+    <string name="oneweb_partly">Not answered: %1$s.</string>
+    <string name="oneweb_copy">Copy details</string>
+    <string name="oneweb_copied">Copied the terminal\'s answers, as it sent them.</string>
+    <string name="oneweb_clear_map">Clear signal map</string>
+    <string name="oneweb_map_cleared">The signal map starts again.</string>
 </resources>

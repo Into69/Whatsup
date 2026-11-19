@@ -84,6 +84,7 @@ function openCalibration() {
         el('div', 'sheet-line sheet-hint calibration-coverage-label'), meter,
         el('div', 'sheet-line calibration-result'),
         el('div', 'sheet-line sheet-hint', 'Still pointing a few degrees off? Line it up on the Sun or Moon with the camera.'),
+        el('div', 'sheet-line calibration-lined-up'),
         buttons);
     document.body.appendChild(node);
     calibration.node = node;
@@ -153,6 +154,11 @@ function refreshCalibration() {
     node.querySelector('.calibration-meter div').style.width = `${Math.round(coverage * 100)}%`;
     node.querySelector('.calibration-coverage-label').textContent = coverage >= 1
         ? 'Every way covered.' : `Ways faced so far: ${Math.round(coverage * 100)}%`;
+
+    const lined = describeCompassCalibration();
+    const linedUp = node.querySelector('.calibration-lined-up');
+    linedUp.textContent = lined.text;
+    linedUp.classList.toggle('warning', lined.stale);
 
     // Lining up: only on a body above the horizon.
     for (const body of ['sun', 'moon']) {

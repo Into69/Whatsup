@@ -254,6 +254,105 @@ function addAircraft(state) {
     card.append(make('div', 'label', strings.aircraft_receiver), field, make('div', 'note', strings.aircraft_receiver_note));
 }
 
+/**
+ * The user's Starlink dish (StarlinkDish): on or off, its address, and a check that reads it and says
+ * what it found; run when turned on, when the page opens with it on, and on Check.
+ */
+function addStarlink(state) {
+    addSection('ic_starlink_dish', 'section_starlink');
+    const card = addCard();
+    const status = make('div', 'update-status starlink-status');
+    const check = () => {
+        status.textContent = strings.starlink_checking;
+        post({ call: 'checkStarlink' });
+    };
+    const [title, description] = splitTitle(strings.starlink_dish);
+    addSwitchRow(card, title, description, state.starlink.on, on => {
+        set('starlinkDish', on);
+        if (on) check(); else status.textContent = '';
+    });
+    addDivider(card);
+
+    const field = make('div', 'field');
+    const address = make('input');
+    address.type = 'text';
+    address.spellcheck = false;
+    address.placeholder = strings.starlink_address_hint;
+    address.value = state.starlink.address;
+    address.addEventListener('input', () => set('starlinkAddress', address.value));
+    field.append(address);
+    card.append(make('div', 'label', strings.starlink_address), field, make('div', 'note', strings.starlink_address_note));
+    addDivider(card);
+
+    const row = make('div', 'field update-row');
+    const button = make('button', '', strings.starlink_check);
+    button.addEventListener('click', check);
+    row.append(status, button);
+    card.append(row);
+    settingsPage.starlinkChecked = ({ text }) => { status.textContent = text; };
+    if (state.starlink.on) check();
+}
+
+/**
+ * The user's OneWeb terminal (OneWebTerminal): on or off, its address, a check saying what it found,
+ * Copy details (every answer as it came), and clearing the signal map that sky view builds.
+ */
+function addOneWeb(state) {
+    addSection('ic_oneweb_terminal', 'section_oneweb');
+    const card = addCard();
+    const status = make('div', 'update-status oneweb-status');
+    let raw = null;
+    const check = () => {
+        status.textContent = strings.oneweb_checking;
+        post({ call: 'checkOneWeb' });
+    };
+    const [title, description] = splitTitle(strings.oneweb_terminal);
+    addSwitchRow(card, title, description, state.oneweb.on, on => {
+        set('onewebTerminal', on);
+        if (on) check(); else status.textContent = '';
+    });
+    addDivider(card);
+
+    const field = make('div', 'field');
+    const address = make('input');
+    address.type = 'text';
+    address.spellcheck = false;
+    address.placeholder = strings.oneweb_address_hint;
+    address.value = state.oneweb.address;
+    address.addEventListener('input', () => set('onewebAddress', address.value));
+    field.append(address);
+    card.append(make('div', 'label', strings.oneweb_address), field, make('div', 'note', strings.oneweb_address_note));
+    addDivider(card);
+
+    const row = make('div', 'field update-row');
+    const buttons = make('div', 'oneweb-buttons');
+    const checkButton = make('button', '', strings.oneweb_check);
+    checkButton.addEventListener('click', check);
+    const copy = make('button', '', strings.oneweb_copy);
+    copy.addEventListener('click', async () => {
+        if (!raw) return check();
+        try {
+            await navigator.clipboard.writeText(raw);
+            status.textContent = strings.oneweb_copied;
+        } catch (e) {
+            status.textContent = e.message;
+        }
+    });
+    const clear = make('button', '', strings.oneweb_clear_map);
+    clear.addEventListener('click', () => {
+        post({ call: 'clearOneWebMap' });
+        status.textContent = strings.oneweb_map_cleared;
+    });
+    buttons.append(checkButton, copy, clear);
+    row.append(status, buttons);
+    card.append(row);
+    settingsPage.onewebChecked = answer => {
+        status.textContent = answer.text;
+        raw = answer.raw;
+    };
+    if (state.oneweb.on) check();
+}
+
 function addAlerts(state) {
     addSection('ic_bell', 'section_alerts');
     const card = addCard();
@@ -345,6 +444,8 @@ window.addEventListener('mouseup', e => {
     addSatellites(state);
     addDisplay(state);
     addAircraft(state);
+    addStarlink(state);
+    addOneWeb(state);
     addAlerts(state);
     addAbout(state);
 })();

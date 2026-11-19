@@ -70,6 +70,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     @Volatile
     private var mapShown = false
     private val aircraftFeed = AircraftFeed()
+    private val starlinkDish = StarlinkDish()
+    private val onewebTerminal = OneWebTerminal()
     private val flightInfo = FlightInfo()
     private val skyline by lazy { Skyline(this) }
     /** The location set by hand that lastLocation holds, or null while it is the phone's. */
@@ -213,6 +215,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     path.startsWith("satcat/") -> path.removePrefix("satcat/").toIntOrNull()?.let(catalog::lookup)
                     // Live aircraft around the location (aircraft.js polls it); off the main thread here.
                     path == "aircraft.json" -> aircraftData()
+                    // The user's Starlink dish (starlink.js polls it in sky view); off the main thread here.
+                    path == "starlink.json" -> starlinkData()
+                    // The user's OneWeb terminal (oneweb.js polls it); off the main thread here.
+                    path == "oneweb.json" -> onewebData()
                     // A selected aircraft's route, airframe and track (flight/route/BAW83 and so on).
                     path.startsWith("flight/") -> flightData(path.removePrefix("flight/"))
                     // The terrain's skyline round a place (skyline/53.5461,-113.4938), for sky view.
@@ -518,7 +524,9 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             GeomagneticField(it.latitude.toFloat(), it.longitude.toFloat(), it.altitude.toFloat(), System.currentTimeMillis())
                 .declination
         } ?: 0f
-        runJs("globe.setCompass($declination, ${settings.compassOffset}, ${lastLocation != null})")
+        // Checked JSON when kept (noteCompassCalibration), so it goes in as it is.
+        val calibration = settings.compassCalibration.ifEmpty { "null" }
+        runJs("globe.setCompass($declination, ${settings.compassOffset}, ${lastLocation != null}, $calibration)")
     }
 
     private fun pushFavourites() {
@@ -541,6 +549,18 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     } catch (e: Exception) {
         Log.w(TAG, "No camera field of view", e)
         null
+    }
+
+    /** The user's Starlink dish, if they asked for it and the map is showing; see StarlinkDish. */
+    private fun starlinkData(): ByteArray {
+        if (!mapShown || !settings.starlinkDish) return JSONObject().put("error", "off").toString().toByteArray()
+        return starlinkDish.load(settings.starlinkAddress)
+    }
+
+    /** The user's OneWeb terminal, if they asked for it and the map is showing; see OneWebTerminal. */
+    private fun onewebData(): ByteArray {
+        if (!mapShown || !settings.onewebTerminal) return JSONObject().put("error", "off").toString().toByteArray()
+        return onewebTerminal.load(settings.onewebAddress)
     }
 
     /** The aircraft around the location, if the map is showing and there is a location; see AircraftFeed. */
@@ -763,6 +783,13 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         fun setFavourites(json: String) = runOnUiThread {
             val array = JSONArray(json)
             settings.favourites = (0 until array.length()).map(array::getInt).toSet()
+        }
+
+        /** How the calibration below was set, as Settings.compassCalibration; "{}" or anything else not an object forgets it. */
+        @JavascriptInterface
+        fun noteCompassCalibration(json: String) = runOnUiThread {
+            val record = runCatching { JSONObject(json) }.getOrNull()?.takeIf { it.length() > 0 }
+            settings.compassCalibration = record?.toString().orEmpty()
         }
 
         /** The user's compass calibration, in degrees added to headings. */

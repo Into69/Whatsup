@@ -429,3 +429,211 @@ public class UpdatesTest
     [InlineData("0.1", "0.2", false)]
     public void ComparesVersionsByNumber(string version, string than, bool newer) => Assert.Equal(newer, Updates.IsNewer(version, than));
 }
+
+/** StarlinkDish's reading of the dish's answers, built here by hand as protobuf, and a call to a fake dish. */
+public class StarlinkDishTest
+{
+    sealed class Message
+    {
+        readonly List<byte> bytes = [];
+        void Raw(ulong v)
+        {
+            while (v >= 0x80) { bytes.Add((byte)((v & 0x7F) | 0x80)); v >>= 7; }
+            bytes.Add((byte)v);
+        }
+        public Message Varint(int field, long v) { Raw((ulong)field << 3); Raw((ulong)v); return this; }
+        public Message Float(int field, float f) { Raw(((ulong)field << 3) | 5); bytes.AddRange(BitConverter.GetBytes(f)); return this; }
+        public Message Bytes(int field, byte[] b) { Raw(((ulong)field << 3) | 2); Raw((ulong)b.Length); bytes.AddRange(b); return this; }
+        public Message String(int field, string s) => Bytes(field, System.Text.Encoding.UTF8.GetBytes(s));
+        public Message Sub(int field, Message m) => Bytes(field, m.Build());
+        public Message PackedFloats(int field, float[] values) => Bytes(field, values.SelectMany(BitConverter.GetBytes).ToArray());
+        public byte[] Build() => [.. bytes];
+    }
+
+    static Message Diagnostics() => new Message()
+        .String(3, "2025.08.01.mr12345")
+        .Sub(5, new Message().Varint(10, 1).Varint(6, 1))
+        .Sub(9, new Message().Float(1, 181.5f).Float(2, 64.25f).Float(3, 175f).Float(4, 66f));
+
+    static Message Map()
+    {
+        var snr = Enumerable.Repeat(1f, 16).ToArray();
+        snr[5] = 0;
+        snr[6] = -1;
+        return new Message().Varint(1, 4).Varint(2, 4).PackedFloats(3, snr).Float(4, 25).Float(5, 80).Varint(6, 1);
+    }
+
+    [Fact]
+    public void EncodesRequests()
+    {
+        Assert.Equal([0x82, 0xF7, 0x02, 0x00], Proto.EmptyMessageField(6000));
+        Assert.Equal([0xC2, 0x7D, 0x00], Proto.EmptyMessageField(2008));
+    }
+
+    [Fact]
+    public void ReadsDiagnosticsAndTheMap()
+    {
+        var dish = StarlinkDish.ParseDiagnostics(new Message().Varint(1, 42).Sub(6001, Diagnostics()).Build());
+        Assert.Equal("2025.08.01.mr12345", (string?)dish["software"]);
+        Assert.True((bool)dish["alerts"]!["obstructed"]!);
+        Assert.True((bool)dish["alerts"]!["mastNotNearVertical"]!);
+        Assert.Equal(181.5, (double)dish["alignment"]!["boresight"]!["az"]!, 6);
+        Assert.Equal(3.24, StarlinkDish.Separation(dish["alignment"]!["boresight"]!, dish["alignment"]!["desired"]!), 1);
+        Assert.Throws<IOException>(() => StarlinkDish.ParseDiagnostics(new Message().Sub(6000, new Message().String(1, "router")).Build()));
+
+        var map = StarlinkDish.ParseObstructionMap(new Message().Sub(2008, Map()).Build());
+        Assert.Equal(80.0, (double)map["edgeThetaDeg"]!, 6);
+        Assert.Equal("earth", (string?)map["frame"]);
+        var (seen, obstructed) = StarlinkDish.MapStats(map);
+        Assert.Equal(11.0 / 12, seen, 9);
+        Assert.Equal(1.0 / 11, obstructed, 9);
+        // An older map gives its edge as an elevation.
+        var old = StarlinkDish.ParseObstructionMap(new Message().Sub(2008, new Message().Varint(1, 1).Varint(2, 1).Float(3, 1).Float(4, 20)).Build());
+        Assert.Equal(70.0, (double)old["edgeThetaDeg"]!, 6);
+    }
+
+    [Fact]
+    public void AddressesStayLocal()
+    {
+        Assert.Equal("http://192.168.100.1:9201", StarlinkDish.BaseUrl(""));
+        Assert.Equal("http://192.168.1.50:9201", StarlinkDish.BaseUrl(" 192.168.1.50 "));
+        Assert.Equal("http://dishy.lan:9300", StarlinkDish.BaseUrl("http://dishy.lan:9300/"));
+        Assert.Throws<IOException>(() => StarlinkDish.BaseUrl("example.com"));
+        var off = JsonNode.Parse(new StarlinkDish().Load("example.com"))!;
+        Assert.Contains("Not on this network", (string)off["error"]!);
+    }
+
+    /** A fake dish on this machine answering gRPC-web as the real one does: a data frame, then trailers. */
+    [Fact]
+    public void TalksToADish()
+    {
+        var port = System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Select(e => e.Port).DefaultIfEmpty(0).Max() % 20000 + 30000;
+        using var listener = new System.Net.HttpListener();
+        listener.Prefixes.Add($"http://localhost:{port}/");
+        listener.Start();
+        var requests = new List<string>();
+        var server = Task.Run(async () =>
+        {
+            for (var i = 0; i < 2; i++)
+            {
+                var context = await listener.GetContextAsync();
+                var body = new MemoryStream();
+                await context.Request.InputStream.CopyToAsync(body);
+                var request = body.ToArray();
+                requests.Add($"{context.Request.HttpMethod} {context.Request.Url!.AbsolutePath} {context.Request.ContentType} {Convert.ToHexString(request)}");
+                // The request after its 5-byte frame header: which field it asks for.
+                var answer = request[5] == 0x82 ? new Message().Sub(6001, Diagnostics()) : new Message().Sub(2008, Map());
+                var data = answer.Build();
+                var trailers = System.Text.Encoding.ASCII.GetBytes("grpc-status:0\r\ngrpc-message:\r\n");
+                var reply = new MemoryStream();
+                foreach (var (flag, part) in new[] { ((byte)0, data), ((byte)0x80, trailers) })
+                {
+                    reply.WriteByte(flag);
+                    reply.Write([(byte)(part.Length >> 24), (byte)(part.Length >> 16), (byte)(part.Length >> 8), (byte)part.Length]);
+                    reply.Write(part);
+                }
+                context.Response.ContentType = "application/grpc-web+proto";
+                await context.Response.OutputStream.WriteAsync(reply.ToArray());
+                context.Response.Close();
+            }
+        });
+        var json = JsonNode.Parse(new StarlinkDish().Load($"localhost:{port}"))!;
+        server.Wait(5000);
+        Assert.Null(json["error"]);
+        Assert.Equal(64.25, (double)json["dish"]!["alignment"]!["boresight"]!["el"]!, 6);
+        Assert.Equal(4, (int)json["map"]!["rows"]!);
+        Assert.Equal("POST /SpaceX.API.Device.Device/Handle application/grpc-web+proto 000000000482F70200", requests[0]);
+        Assert.Equal("POST /SpaceX.API.Device.Device/Handle application/grpc-web+proto 0000000003C27D00", requests[1]);
+    }
+
+    [Fact]
+    public void SaysWhyNot()
+    {
+        // Nothing listening on this port: refused at once.
+        var json = JsonNode.Parse(new StarlinkDish().Load("127.0.0.1:1"))!;
+        Assert.Equal("can't connect", (string?)json["error"]);
+    }
+}
+
+/** OneWebTerminal's reading of a Hughes terminal's answers, in the shapes the known exporter reads, and a fake terminal. */
+public class OneWebTerminalTest
+{
+    static readonly Dictionary<string, string> Answers = new()
+    {
+        ["antenna/antennatuneinfo"] = """{"calibration_info": {"pointing_score": 87}, "pointing_info": {"current_sinr": "9.25", "satellite": 123, "track_id": "4"}}""",
+        ["modem/satellites_in_view"] = """{"candidate_satellites": "[123, 456, \"789\"]"}""",
+        ["modem/lte_signal_info"] = """{"rsrp_dBW/m^2": -120.5, "rssi_dBm": -71, "sinr_dB": 9.3}""",
+        ["antenna/trackingstatus"] = """{"tracking_status": "TRACKING", "beam": {"commanded_azimuth_deg": -10.5, "commanded_elevation_deg": "62.0"}}""",
+        ["diagnostics/active_faults"] = """{"availability_percent": "99.7", "current_recovery_action_index": 0}""",
+    };
+
+    [Fact]
+    public void SummarisesTheKnownFields()
+    {
+        var answers = new JsonObject(Answers.Select(a => KeyValuePair.Create(a.Key, JsonNode.Parse(a.Value))));
+        var t = OneWebTerminal.Summarise(answers);
+        Assert.Equal(123, (long)t["satellite"]!);
+        Assert.Equal(4, (long)t["trackId"]!);
+        Assert.Equal(9.25, (double)t["sinr"]!, 9);
+        Assert.Equal(87, (double)t["pointingScore"]!, 9);
+        Assert.Equal([123L, 456L, 789L], t["candidates"]!.AsArray().Select(c => (long)c!));
+        Assert.Equal(-71, (double)t["signal"]!["rssiDbm"]!, 9);
+        Assert.Equal(99.7, (double)t["availability"]!, 9);
+        Assert.Equal(349.5, (double)t["pointing"]!["az"]!, 9);
+        Assert.Equal("antenna/trackingstatus.beam", (string?)t["pointing"]!["from"]);
+        Assert.Null(OneWebTerminal.FindPointing(JsonNode.Parse("""{"label": 5, "maze": 7}""")!.AsObject(), "x"));
+        Assert.False(OneWebTerminal.Summarise(JsonNode.Parse("""{"antenna/antennatuneinfo": {"pointing_info": {"satellite": ""}}}""")!.AsObject()).ContainsKey("satellite"));
+    }
+
+    [Fact]
+    public void AddressesStayLocal()
+    {
+        Assert.Equal("http://192.168.100.1", OneWebTerminal.BaseUrl(""));
+        Assert.Equal("http://192.168.1.9:8080", OneWebTerminal.BaseUrl("192.168.1.9:8080/"));
+        Assert.Throws<IOException>(() => OneWebTerminal.BaseUrl("oneweb.net"));
+    }
+
+    /** A fake terminal on this machine: the known endpoints answer, the rest are missing (404). */
+    [Fact]
+    public void TalksToATerminal()
+    {
+        var port = 30000 + Environment.ProcessId % 20000;
+        using var listener = new System.Net.HttpListener();
+        listener.Prefixes.Add($"http://localhost:{port}/");
+        listener.Start();
+        var asked = new List<string>();
+        var serving = true;
+        var server = Task.Run(async () =>
+        {
+            while (serving)
+            {
+                System.Net.HttpListenerContext context;
+                try { context = await listener.GetContextAsync(); } catch { return; }
+                var path = context.Request.Url!.AbsolutePath;
+                lock (asked) asked.Add(path);
+                if (Answers.TryGetValue(path.Replace("/api/", ""), out var body))
+                {
+                    context.Response.ContentType = "application/json";
+                    await context.Response.OutputStream.WriteAsync(System.Text.Encoding.UTF8.GetBytes(body));
+                }
+                else context.Response.StatusCode = 404;
+                context.Response.Close();
+            }
+        });
+        var terminal = new OneWebTerminal();
+        var json = terminal.LoadJson($"localhost:{port}", raw: true);
+        Assert.Null(json["error"]);
+        Assert.Equal(123, (long)json["terminal"]!["satellite"]!);
+        Assert.Equal("no such page", (string?)json["errors"]!["system/status"]);
+        Assert.NotNull(json["raw"]!["antenna/trackingstatus"]);
+        Assert.Contains("/api/antenna/antennatuneinfo", asked);
+        // Asked again at once: from what it kept, without asking the terminal.
+        var before = asked.Count;
+        terminal.LoadJson($"localhost:{port}");
+        Assert.Equal(before, asked.Count);
+        serving = false;
+        listener.Stop();
+        // Nothing listening: the first endpoint fails and says why.
+        Assert.Equal("can't connect", (string?)new OneWebTerminal().LoadJson("127.0.0.1:1")["error"]);
+    }
+}

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The user's Starlink dish (settings): a rectangular panel on a mast, tilted to the sky, signal leaving its face. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:tint="?android:attr/textColorPrimary"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- The panel, edge on: tilted up to the right. -->
+    <path
+        android:pathData="M19.8,12.2L8.8,5.2L7.4,7.4L18.4,14.4Z"
+        android:fillColor="#FFFFFFFF"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.5" />
+    <!-- Its mast and the ground. -->
+    <path
+        android:pathData="M12.9,10.9L12.9,20.5M8,20.5L18,20.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.6" />
+    <!-- Signal, square to its face. -->
+    <path
+        android:pathData="M14.6,4.4A5.5,5.5 0 0,1 18.1,6.6M15.1,1.9A8,8 0 0,1 20.1,5.2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.5" />
+</vector>

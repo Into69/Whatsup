@@ -234,6 +234,8 @@
         .lineup-panel { bottom: var(--safe-bottom); }
         .lineup-readout { display: block; font-variant-numeric: tabular-nums; min-height: 1.3em; }
         .lineup-hint { display: block; }
+        .lineup-locked { color: #7cf29c; }
+        .lineup-mode { margin-bottom: 4px; }
 
         /* Dish aligner (dish.js), over everything. */
         .dish {
@@ -248,7 +250,7 @@
         .dish-step.close { background: rgba(255, 209, 102, .16); color: #ffd166; }
         .dish-step.good { background: rgba(124, 242, 156, .16); color: #7cf29c; }
         .dish-section { margin-top: 14px; font-weight: 600; color: var(--accent); }
-        .dish-phone, .dish-compass, .dish-calibration { display: block; }
+        .dish-phone, .dish-compass, .dish-calibration, .dish-lined-up { display: block; }
         .dish-offset { margin-top: 8px; }
         .dish-offset-row { display: flex; align-items: center; gap: 6px; }
         .dish-offset-label { flex: 1; }
@@ -319,6 +321,8 @@
 <script src="passes.js"></script>
 <script src="skyview.js"></script>
 <script src="skyline.js"></script>
+<script src="starlink.js"></script>
+<script src="oneweb.js"></script>
 <script src="dish.js"></script>
 <script src="calibrate.js"></script>
 <script src="lineup.js"></script>

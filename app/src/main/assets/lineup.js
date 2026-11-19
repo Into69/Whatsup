@@ -1,8 +1,10 @@
 'use strict';
 
 // Lining the compass up on the Sun or Moon over the camera's picture. The view draws where the
-// sensors say the body is (a ring, on its line of azimuth, over the horizon and its compass marks);
-// the user slides the drawing sideways until the ring sits on the real Sun or Moon, and taps Set.
+// sensors say the body is (a ring, on its line of azimuth, over the horizon and its compass marks),
+// and moves it sideways onto the real Sun or Moon: by itself in Auto, which finds the body in the
+// picture as the brightest small blob at the height the sensors give; or by the user's finger in
+// Manual. Set saves it.
 // Only the heading moves: tilt comes from the accelerometer, which is good to a fraction of a degree,
 // so a drag is turned into a change of azimuth alone (its part along the way the body moves as the
 // heading turns), and the ring keeps the height the sensors give it. The change is added to the
@@ -18,6 +20,27 @@ const LINEUP_RING_PX = 18;
 const LINEUP_STEP_DEGREES = 0.1;
 const LINEUP_REFRESH_MS = 100;
 const LINEUP_COLOR = '#6ee7ff';
+const LINEUP_FOUND_COLOR = '#ffd166';
+const LINEUP_MODE_KEY = 'lineup.mode';
+
+// Auto: the body found in the picture, as the brightest small blob there, a few times a second.
+/** Width the picture is shrunk to for the search, px; and how often it is searched. */
+const LINEUP_SAMPLE_PX = 192, LINEUP_DETECT_MS = 150;
+/** The brightest spot must be at least this bright (0–255), and this much brighter than the picture's average. */
+const LINEUP_MIN_BRIGHTNESS = 150, LINEUP_MIN_CONTRAST = 60;
+/** A blob bigger than this share of the picture is a bright cloud or sky, not the body. */
+const LINEUP_MAX_BLOB_SHARE = 0.04;
+/**
+ * A blob further than this (degrees) above or below where the sensors put the body is something
+ * else: the tilt is good to a fraction of a degree, so only the heading can be that far out.
+ */
+const LINEUP_MAX_TILT_MISS = 4;
+/** Nor can the heading be out by more than this. */
+const LINEUP_MAX_SHIFT = 45;
+/** Each find moves the ring this share of the way, to steady it; within LINEUP_STEADY degrees for LINEUP_STEADY_MS is locked. */
+const LINEUP_FOLLOW = 0.5, LINEUP_STEADY = 0.15, LINEUP_STEADY_MS = 1000;
+/** A find older than this is lost. */
+const LINEUP_LOST_MS = 600;
 
 const lineUp = {
     node: null,
@@ -36,7 +59,36 @@ const lineUp = {
     /** Sky view's own camera, stopped while this one runs. */
     restartSkyCamera: false,
     refreshedAt: 0,
+    /** 'auto' (found in the picture) or 'manual' (slid by hand); remembered. */
+    mode: readLineUpMode(),
+    /** Auto: where the body was last found on screen { x, y, at }, or null. */
+    found: null,
+    /** Auto: since when the finds have stayed within LINEUP_STEADY of the ring (ms), or 0. */
+    steadySince: 0,
+    detectedAt: 0,
+    /** The shrunk picture searched. */
+    sample: null,
 };
+
+function readLineUpMode() {
+    try {
+        return localStorage.getItem(LINEUP_MODE_KEY) === 'manual' ? 'manual' : 'auto';
+    } catch {
+        return 'auto';
+    }
+}
+
+function setLineUpMode(mode) {
+    lineUp.mode = mode;
+    lineUp.found = null;
+    lineUp.steadySince = 0;
+    try {
+        localStorage.setItem(LINEUP_MODE_KEY, mode);
+    } catch {
+        // Not kept, then.
+    }
+    lineUp.node?.querySelectorAll('.lineup-mode button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+}
 
 function openLineUp(body, fallback = null) {
     if (lineUp.node) closeLineUp();
@@ -46,6 +98,8 @@ function openLineUp(body, fallback = null) {
     lineUp.perDegree = null;
     lineUp.drag = null;
     lineUp.fallback = fallback;
+    lineUp.found = null;
+    lineUp.steadySince = 0;
     const name = bodyName(body);
 
     const node = el('div', 'lineup');
@@ -57,6 +111,8 @@ function openLineUp(body, fallback = null) {
     canvas.addEventListener('pointermove', e => {
         const drag = lineUp.drag;
         if (drag?.id !== e.pointerId) return;
+        // Sliding by hand takes over from auto.
+        if (lineUp.mode === 'auto') setLineUpMode('manual');
         slideLineUp(e.clientX - drag.x, e.clientY - drag.y);
         drag.x = e.clientX;
         drag.y = e.clientY;
@@ -68,17 +124,27 @@ function openLineUp(body, fallback = null) {
     const top = el('div', 'lineup-top');
     const title = el('div', 'sheet-title');
     title.append(el('b', '', `Line up on the ${name}`),
-        el('div', 'sheet-sub', `Slide left or right until the ring sits on the real ${name}.`));
+        el('div', 'sheet-sub lineup-how'));
     const close = el('button', 'sheet-close', '×');
     close.setAttribute('aria-label', 'Close');
     close.addEventListener('click', closeLineUp);
     top.append(title, close);
 
     const panel = el('div', 'lineup-panel');
+    const mode = el('div', 'segmented lineup-mode');
+    for (const [value, label] of [['auto', 'Auto'], ['manual', 'Manual']]) {
+        const button = el('button', value === lineUp.mode ? 'on' : '', label);
+        button.dataset.mode = value;
+        button.addEventListener('click', () => setLineUpMode(value));
+        mode.append(button);
+    }
     const nudge = el('div', 'sheet-buttons');
     const step = (label, sign) => {
         const button = el('button', '', label);
-        button.addEventListener('click', () => nudgeLineUp(sign));
+        button.addEventListener('click', () => {
+            if (lineUp.mode === 'auto') setLineUpMode('manual');
+            nudgeLineUp(sign);
+        });
         return button;
     };
     const reset = el('button', '', 'Reset');
@@ -91,6 +157,7 @@ function openLineUp(body, fallback = null) {
     set.addEventListener('click', setLineUp);
     finish.append(cancel, set);
     panel.append(
+        mode,
         el('div', 'sheet-line lineup-readout'),
         el('div', 'sheet-line sheet-hint lineup-hint', lineUpHint(body)),
         nudge, finish);
@@ -206,7 +273,7 @@ function nudgeLineUp(sign) {
 
 function setLineUp() {
     if (!lineUp.video?.videoWidth || !orientation.rotation) return;
-    setCompassOffset(orientation.offset + lineUp.shift);
+    setCompassOffset(orientation.offset + lineUp.shift, lineUp.body);
     closeLineUp();
 }
 
@@ -275,16 +342,139 @@ function drawLineUp() {
     const nudged = projectWith(turnHeading(rotation, 0.5))(dir);
     lineUp.perDegree = point && nudged ? [(nudged[0] - point[0]) / 0.5, (nudged[1] - point[1]) / 0.5] : null;
     const name = bodyName(lineUp.body);
+    const now = Date.now();
+    const auto = lineUp.mode === 'auto' && camera;
+    if (auto && point && lineUp.perDegree && now - lineUp.detectedAt >= LINEUP_DETECT_MS) {
+        lineUp.detectedAt = now;
+        followBody(point, focal, width, height, now);
+    }
+    if (lineUp.found && now - lineUp.found.at > LINEUP_LOST_MS) {
+        lineUp.found = null;
+        lineUp.steadySince = 0;
+    }
+    const found = auto ? lineUp.found : null;
+    if (found) drawLineUpFound(ctx, found);
+
     const onScreen = point && point[0] > 0 && point[1] > 0 && point[0] < width && point[1] < height;
     if (onScreen) drawLineUpRing(ctx, point, focal, name);
     else drawLineUpArrow(ctx, width, height, worldToDeviceWith(rotation, dir), name);
 
-    const now = Date.now();
     if (now - lineUp.refreshedAt < LINEUP_REFRESH_MS) return;
     lineUp.refreshedAt = now;
+    const locked = found && lineUp.steadySince && now - lineUp.steadySince >= LINEUP_STEADY_MS;
+    lineUp.node.querySelector('.lineup-how').textContent = !auto
+        ? `Slide left or right until the ring sits on the real ${name}.`
+        : `Keep the ${name} in the picture: the ring follows it.`;
+    const status = !auto ? '' : locked ? ` Found the ${name} ✓ Tap Set.` : found ? ` Found the ${name}, steadying…`
+        : ` Looking for the ${name}… If it isn't found (cloud, a brighter light), switch to Manual.`;
     readout.textContent = `${name}: Az ${az.toFixed(1)}° · El ${elevation.toFixed(1)}°. `
-        + (onScreen ? `Calibration ${signed(orientation.offset)} → ${signed(angleDifference(orientation.offset + lineUp.shift, 0))}`
-            : `Turn the camera towards the ${name}.`);
+        + (onScreen || found ? `Calibration ${signed(orientation.offset)} → ${signed(angleDifference(orientation.offset + lineUp.shift, 0))}.`
+            : `Turn the camera towards the ${name}.`)
+        + status;
+    readout.classList.toggle('lineup-locked', !!locked);
+}
+
+/**
+ * Auto: finds the body in the picture and moves the ring part of the way onto it, sideways only.
+ * Of the bright blobs, the one at the height the sensors give wins; one too far above or below,
+ * or needing too big a turn, is something else.
+ */
+function followBody(point, focal, width, height, now) {
+    const v = lineUp.perDegree;
+    const length2 = v[0] * v[0] + v[1] * v[1];
+    if (length2 < 1e-6) return;
+    const pxPerDegree = focal * Math.PI / 180;
+    let best = null;
+    for (const blob of brightBlobs(lineUp.video, width, height)) {
+        const dx = blob.x - point[0], dy = blob.y - point[1];
+        // Degrees of heading to move the ring onto it, and how far it would still be off.
+        const along = (dx * v[0] + dy * v[1]) / length2;
+        const tiltMiss = Math.hypot(dx - along * v[0], dy - along * v[1]) / pxPerDegree;
+        if (tiltMiss > LINEUP_MAX_TILT_MISS || Math.abs(angleDifference(lineUp.shift + along, 0)) > LINEUP_MAX_SHIFT) continue;
+        if (!best || tiltMiss < best.tiltMiss) best = { ...blob, along, tiltMiss };
+    }
+    if (!best) return;
+    lineUp.found = { x: best.x, y: best.y, at: now };
+    lineUp.shift = angleDifference(lineUp.shift + best.along * LINEUP_FOLLOW, 0);
+    if (Math.abs(best.along) > LINEUP_STEADY) lineUp.steadySince = 0;
+    else if (!lineUp.steadySince) lineUp.steadySince = now;
+}
+
+/**
+ * The bright blobs in the camera's picture, in screen px { x, y }: the spots near the brightest one's
+ * brightness, joined up, none touching the edge (cut off, its middle is unknown) or too big.
+ */
+function brightBlobs(video, width, height) {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const sw = LINEUP_SAMPLE_PX, sh = Math.max(1, Math.round(sw * vh / vw));
+    const sample = lineUp.sample ??= document.createElement('canvas');
+    if (sample.width !== sw || sample.height !== sh) {
+        sample.width = sw;
+        sample.height = sh;
+    }
+    const g = sample.getContext('2d', { willReadFrequently: true });
+    g.drawImage(video, 0, 0, sw, sh);
+    const pixels = g.getImageData(0, 0, sw, sh).data;
+    const count = sw * sh;
+    const light = new Float32Array(count);
+    let max = 0, sum = 0;
+    for (let i = 0; i < count; i++) {
+        const l = 0.299 * pixels[4 * i] + 0.587 * pixels[4 * i + 1] + 0.114 * pixels[4 * i + 2];
+        light[i] = l;
+        sum += l;
+        if (l > max) max = l;
+    }
+    const mean = sum / count;
+    if (max < LINEUP_MIN_BRIGHTNESS || max - mean < LINEUP_MIN_CONTRAST) return [];
+    const threshold = Math.max(max - 30, mean + (max - mean) * 0.7);
+
+    // The picture is shown with object-fit: cover, scaled up and centred.
+    const scale = Math.max(width / vw, height / vh) * vw / sw;
+    const left = (width - sw * scale) / 2, top = (height - sh * scale) / 2;
+    const seen = new Uint8Array(count);
+    const blobs = [];
+    const stack = [];
+    for (let start = 0; start < count && blobs.length < 30; start++) {
+        if (seen[start] || light[start] < threshold) continue;
+        let area = 0, weight = 0, sx = 0, sy = 0, edge = false;
+        seen[start] = 1;
+        stack.push(start);
+        while (stack.length) {
+            const i = stack.pop();
+            const x = i % sw, y = (i - x) / sw;
+            const w = light[i] - threshold + 1;
+            area++;
+            weight += w;
+            sx += (x + 0.5) * w;
+            sy += (y + 0.5) * w;
+            if (x === 0 || y === 0 || x === sw - 1 || y === sh - 1) edge = true;
+            for (const j of [x > 0 ? i - 1 : -1, x < sw - 1 ? i + 1 : -1, y > 0 ? i - sw : -1, y < sh - 1 ? i + sw : -1]) {
+                if (j >= 0 && !seen[j] && light[j] >= threshold) {
+                    seen[j] = 1;
+                    stack.push(j);
+                }
+            }
+        }
+        if (edge || area > count * LINEUP_MAX_BLOB_SHARE) continue;
+        blobs.push({ x: left + sx / weight * scale, y: top + sy / weight * scale });
+    }
+    return blobs;
+}
+
+/** Where the body was found: a small cross, in another colour from the ring. */
+function drawLineUpFound(ctx, { x, y }) {
+    ctx.save();
+    for (const [color, width] of [['rgba(0, 0, 0, 0.6)', 4], [LINEUP_FOUND_COLOR, 2]]) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            ctx.moveTo(x + dx * 5, y + dy * 5);
+            ctx.lineTo(x + dx * 11, y + dy * 11);
+        }
+        ctx.stroke();
+    }
+    ctx.restore();
 }
 
 function worldToDeviceWith(r, [e, n, u]) {

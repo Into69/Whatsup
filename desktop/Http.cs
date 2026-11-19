@@ -54,8 +54,9 @@ static class Http
         bool allowLocalHttp = false,
         Action<long, long>? onProgress = null)
     {
-        if (Offline) throw new OfflineException();
         var address = new Uri(url);
+        // Offline mode keeps the app off the internet; a device on this network is still fine.
+        if (Offline && !(allowLocalHttp && IsLocalHost(address.Host))) throw new OfflineException();
         // Plain http only to the user's own ADS-B receiver on this network.
         if (address.Scheme != "https" && !(allowLocalHttp && address.Scheme == "http" && IsLocalHost(address.Host)))
         {
@@ -127,6 +128,46 @@ static class Http
 
     public static string GetText(string url, int readTimeoutMs = 30_000) =>
         System.Text.Encoding.UTF8.GetString(GetBytes(url, readTimeoutMs));
+
+    /**
+     * POSTs `body` to a device on this network (the user's Starlink dish) and returns the response's
+     * headers (names lower case, trailers included) and body. Local addresses only; offline mode
+     * doesn't stop it, since nothing leaves the local network.
+     */
+    public static (Dictionary<string, string> Headers, byte[] Body) PostLocal(
+        string url, byte[] body, IReadOnlyDictionary<string, string> headers, int timeoutMs)
+    {
+        var address = new Uri(url);
+        if (address.Scheme is not ("http" or "https") || !IsLocalHost(address.Host))
+        {
+            throw new IOException($"Only addresses on this network are allowed: {url}");
+        }
+        using var request = new HttpRequestMessage(HttpMethod.Post, address) { Content = new ByteArrayContent(body) };
+        request.Headers.UserAgent.ParseAdd(UserAgent);
+        foreach (var (name, value) in headers)
+        {
+            if (name.Equals("Content-Type", StringComparison.OrdinalIgnoreCase)) request.Content.Headers.TryAddWithoutValidation(name, value);
+            else request.Headers.TryAddWithoutValidation(name, value);
+        }
+        using var timeout = new CancellationTokenSource(timeoutMs);
+        try
+        {
+            using var response = client.Send(request, HttpCompletionOption.ResponseContentRead, timeout.Token);
+            if (response.StatusCode != HttpStatusCode.OK) throw new StatusException((int)response.StatusCode, "");
+            var answer = new MemoryStream();
+            response.Content.ReadAsStream(timeout.Token).CopyTo(answer);
+            var names = new Dictionary<string, string>();
+            foreach (var (name, values) in response.Headers.Concat(response.Content.Headers).Concat(response.TrailingHeaders))
+            {
+                names[name.ToLowerInvariant()] = string.Join(",", values);
+            }
+            return (names, answer.ToArray());
+        }
+        catch (OperationCanceledException e)
+        {
+            throw new IOException("no answer", e);
+        }
+    }
 
     /**
      * Whether `host` is on the local network: a private, link-local or loopback IPv4 address, a

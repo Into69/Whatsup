@@ -19,8 +19,10 @@ import androidx.annotation.StringRes
 import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 /**
  * The settings screen, as sections of cards: location (the phone's, or one set by hand), map style
@@ -63,6 +65,8 @@ class SettingsActivity : ComponentActivity() {
         addSatellites()
         addDisplay()
         addAircraft()
+        addStarlink()
+        addOneWeb()
         addAlerts()
         addAbout()
     }
@@ -365,6 +369,229 @@ class SettingsActivity : ComponentActivity() {
         card.addView(receiverTitle)
         card.addView(receiver, LinearLayout.LayoutParams(MATCH, WRAP).apply { marginStart = dp(12); marginEnd = dp(12) })
         card.addView(receiverNote)
+    }
+
+    /**
+     * The user's Starlink dish (StarlinkDish): on or off, its address, and a check that reads it and
+     * says what it found; run when turned on, when the screen opens with it on, and on Check.
+     */
+    private fun addStarlink() {
+        addSectionHeader(R.drawable.ic_starlink_dish, R.string.section_starlink)
+        val card = addCard()
+        val status = TextView(this)
+        val button = android.widget.Button(this)
+        var check: Job? = null
+        val runCheck = {
+            check?.cancel()
+            status.text = getString(R.string.starlink_checking)
+            val address = settings.starlinkAddress
+            check = lifecycleScope.launch {
+                val json = withContext(Dispatchers.IO) { JSONObject(StarlinkDish().load(address).toString(Charsets.UTF_8)) }
+                status.text = describeStarlink(address, json)
+            }
+        }
+        val (title, description) = splitTitle(getString(R.string.starlink_dish))
+        addSwitchRow(card, title, description, settings.starlinkDish) { on ->
+            settings.starlinkDish = on
+            if (on) runCheck() else {
+                check?.cancel()
+                status.text = ""
+            }
+        }
+        addDivider(card)
+
+        val addressTitle = TextView(this)
+        addressTitle.text = getString(R.string.starlink_address)
+        addressTitle.setTextColor(getColor(android.R.color.white))
+        addressTitle.textSize = 15f
+        addressTitle.setPadding(dp(16), dp(12), dp(16), 0)
+        val address = android.widget.EditText(this)
+        address.hint = getString(R.string.starlink_address_hint)
+        address.setText(settings.starlinkAddress)
+        address.setSingleLine()
+        address.textSize = 14f
+        address.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+        address.setTextColor(getColor(android.R.color.white))
+        address.setHintTextColor(getColor(R.color.text_secondary))
+        address.backgroundTintList = ColorStateList.valueOf(getColor(R.color.accent))
+        address.doAfterTextChanged { settings.starlinkAddress = it?.toString().orEmpty() }
+        val note = TextView(this)
+        note.text = getString(R.string.starlink_address_note)
+        note.setTextColor(getColor(R.color.text_secondary))
+        note.textSize = 13f
+        note.setPadding(dp(16), 0, dp(16), dp(8))
+        card.addView(addressTitle)
+        card.addView(address, LinearLayout.LayoutParams(MATCH, WRAP).apply { marginStart = dp(12); marginEnd = dp(12) })
+        card.addView(note)
+        addDivider(card)
+
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = android.view.Gravity.CENTER_VERTICAL
+        row.setPadding(dp(16), dp(10), dp(12), dp(10))
+        status.setTextColor(getColor(R.color.text_secondary))
+        status.textSize = 13f
+        status.setLineSpacing(0f, 1.2f)
+        status.setTextIsSelectable(true)
+        button.isAllCaps = false
+        button.text = getString(R.string.starlink_check)
+        button.setOnClickListener { runCheck() }
+        row.addView(status, LinearLayout.LayoutParams(0, WRAP, 1f))
+        row.addView(button, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = dp(8) })
+        card.addView(row)
+        if (settings.starlinkDish) runCheck()
+    }
+
+    /** What the check found: connected, where the dish points and wants to, alerts, the map; or why not. */
+    private fun describeStarlink(address: String, json: JSONObject): String {
+        val shown = address.ifBlank { StarlinkDish.DEFAULT_ADDRESS }
+        json.optString("error").takeIf { it.isNotEmpty() }?.let { return getString(R.string.starlink_unreachable, shown, it) }
+        val dish = json.getJSONObject("dish")
+        val lines = mutableListOf(getString(R.string.starlink_connected, dish.optString("software").ifEmpty { "?" }))
+        val alignment = dish.optJSONObject("alignment")
+        val boresight = alignment?.optJSONObject("boresight")
+        val desired = alignment?.optJSONObject("desired")
+        val azEl = { d: JSONObject -> "Az %.1f° El %.1f°".format(d.getDouble("az"), d.getDouble("el")) }
+        if (boresight != null && desired != null) {
+            val off = StarlinkDish.separation(boresight, desired)
+            lines += getString(
+                R.string.starlink_pointing, azEl(boresight), azEl(desired),
+                if (off < 1) getString(R.string.starlink_aligned) else getString(R.string.starlink_off_by, "%.1f°".format(off)),
+            )
+        } else {
+            lines += getString(R.string.starlink_no_alignment)
+        }
+        if (dish.optBoolean("stowed")) lines += getString(R.string.starlink_stowed)
+        val alerts = dish.optJSONObject("alerts")?.keys()?.asSequence()?.map { key ->
+            val id = resources.getIdentifier("starlink_alert_$key", "string", packageName)
+            if (id != 0) getString(id) else key
+        }?.toList().orEmpty()
+        if (alerts.isNotEmpty()) lines += getString(R.string.starlink_alerts, alerts.joinToString(", "))
+        val map = json.optJSONObject("map")
+        if (map != null) {
+            val (seen, obstructed) = StarlinkDish.mapStats(map)
+            lines += getString(R.string.starlink_map, "%.0f%%".format(seen * 100), "%.1f%%".format(obstructed * 100))
+        } else {
+            lines += getString(R.string.starlink_no_map, json.optString("mapError").ifEmpty { "?" })
+        }
+        return lines.joinToString("\n")
+    }
+
+    /**
+     * The user's OneWeb terminal (OneWebTerminal): on or off, its address, a check saying what it
+     * found, Copy details (every answer as it came, to see what a terminal sends), and clearing the
+     * signal map that sky view builds.
+     */
+    private fun addOneWeb() {
+        addSectionHeader(R.drawable.ic_oneweb_terminal, R.string.section_oneweb)
+        val card = addCard()
+        val status = TextView(this)
+        var check: Job? = null
+        var lastRaw: String? = null
+        val runCheck = {
+            check?.cancel()
+            status.text = getString(R.string.oneweb_checking)
+            val address = settings.onewebAddress
+            check = lifecycleScope.launch {
+                val json = withContext(Dispatchers.IO) { JSONObject(OneWebTerminal().load(address, raw = true).toString(Charsets.UTF_8)) }
+                lastRaw = json.toString(2)
+                status.text = describeOneWeb(address, json)
+            }
+        }
+        val (title, description) = splitTitle(getString(R.string.oneweb_terminal))
+        addSwitchRow(card, title, description, settings.onewebTerminal) { on ->
+            settings.onewebTerminal = on
+            if (on) runCheck() else {
+                check?.cancel()
+                status.text = ""
+            }
+        }
+        addDivider(card)
+
+        val addressTitle = TextView(this)
+        addressTitle.text = getString(R.string.oneweb_address)
+        addressTitle.setTextColor(getColor(android.R.color.white))
+        addressTitle.textSize = 15f
+        addressTitle.setPadding(dp(16), dp(12), dp(16), 0)
+        val address = android.widget.EditText(this)
+        address.hint = getString(R.string.oneweb_address_hint)
+        address.setText(settings.onewebAddress)
+        address.setSingleLine()
+        address.textSize = 14f
+        address.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+        address.setTextColor(getColor(android.R.color.white))
+        address.setHintTextColor(getColor(R.color.text_secondary))
+        address.backgroundTintList = ColorStateList.valueOf(getColor(R.color.accent))
+        address.doAfterTextChanged { settings.onewebAddress = it?.toString().orEmpty() }
+        val note = TextView(this)
+        note.text = getString(R.string.oneweb_address_note)
+        note.setTextColor(getColor(R.color.text_secondary))
+        note.textSize = 13f
+        note.setLineSpacing(0f, 1.2f)
+        note.setPadding(dp(16), 0, dp(16), dp(8))
+        card.addView(addressTitle)
+        card.addView(address, LinearLayout.LayoutParams(MATCH, WRAP).apply { marginStart = dp(12); marginEnd = dp(12) })
+        card.addView(note)
+        addDivider(card)
+
+        status.setTextColor(getColor(R.color.text_secondary))
+        status.textSize = 13f
+        status.setLineSpacing(0f, 1.2f)
+        status.setTextIsSelectable(true)
+        status.setPadding(dp(16), dp(10), dp(16), 0)
+        card.addView(status)
+        val buttons = LinearLayout(this)
+        buttons.orientation = LinearLayout.HORIZONTAL
+        buttons.setPadding(dp(12), dp(4), dp(12), dp(10))
+        fun button(@StringRes text: Int, onClick: () -> Unit) = android.widget.Button(this).also {
+            it.isAllCaps = false
+            it.text = getString(text)
+            it.setOnClickListener { onClick() }
+            buttons.addView(it, LinearLayout.LayoutParams(0, WRAP, 1f).apply { marginStart = dp(4); marginEnd = dp(4) })
+        }
+        button(R.string.oneweb_check) { runCheck() }
+        button(R.string.oneweb_copy) {
+            val raw = lastRaw ?: return@button runCheck()
+            val clipboard = getSystemService(android.content.ClipboardManager::class.java)
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("OneWeb terminal", raw))
+            Toast.makeText(this, R.string.oneweb_copied, Toast.LENGTH_SHORT).show()
+        }
+        button(R.string.oneweb_clear_map) {
+            settings.onewebMapClearedAt = System.currentTimeMillis()
+            Toast.makeText(this, R.string.oneweb_map_cleared, Toast.LENGTH_SHORT).show()
+        }
+        card.addView(buttons)
+        if (settings.onewebTerminal) runCheck()
+    }
+
+    /** What the check found: the satellite in use and its signal, candidates, availability; or why not. */
+    private fun describeOneWeb(address: String, json: JSONObject): String {
+        val shown = address.ifBlank { OneWebTerminal.DEFAULT_ADDRESS }
+        json.optString("error").takeIf { it.isNotEmpty() }?.let { return getString(R.string.oneweb_unreachable, shown, it) }
+        val t = json.getJSONObject("terminal")
+        val lines = mutableListOf(getString(R.string.oneweb_connected))
+        if (t.has("satellite") && t.getLong("satellite") > 0) {
+            val sinr = if (t.has("sinr")) "%.1f dB".format(t.getDouble("sinr")) else "?"
+            lines += getString(R.string.oneweb_satellite, t.getLong("satellite").toString(), t.optString("trackId", "?"), sinr)
+        } else {
+            lines += getString(R.string.oneweb_no_satellite)
+        }
+        if (t.has("pointingScore")) lines += getString(R.string.oneweb_pointing_score, "%.0f".format(t.getDouble("pointingScore")))
+        t.optJSONArray("candidates")?.takeIf { it.length() > 0 }?.let { c ->
+            // Besides the one in use, which the list includes.
+            val next = (0 until c.length()).map { c.getLong(it) }.filter { it != t.optLong("satellite") }
+            if (next.isNotEmpty()) lines += getString(R.string.oneweb_candidates, next.joinToString(", "))
+        }
+        if (t.has("availability")) lines += getString(R.string.oneweb_availability, "%.1f%%".format(t.getDouble("availability")))
+        t.optJSONObject("pointing")?.let { p ->
+            lines += getString(R.string.oneweb_pointing, "Az %.1f° El %.1f°".format(p.getDouble("az"), p.getDouble("el")))
+        }
+        json.optJSONObject("errors")?.let { e ->
+            // Grouped by why: "a, b (no such page)".
+            val byWhy = e.keys().asSequence().groupBy { e.getString(it) }
+            lines += getString(R.string.oneweb_partly, byWhy.entries.joinToString("; ") { (why, endpoints) -> "${endpoints.joinToString(", ")} ($why)" })
+        }
+        return lines.joinToString("\n")
     }
 
     /** Offline mode: the app uses only what it has saved (see Settings.offlineMode). */

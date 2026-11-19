@@ -42,8 +42,9 @@ object Http {
         allowLocalHttp: Boolean = false,
         onProgress: ((Long, Long) -> Unit)? = null,
     ): Long {
-        if (offline) throw OfflineException()
         val address = URL(url)
+        // Offline mode keeps the app off the internet; a device on this network is still fine.
+        if (offline && !(allowLocalHttp && isLocalHost(address.host))) throw OfflineException()
         // The manifest allows cleartext for the user's own ADS-B receiver; this keeps it to that.
         if (address.protocol != "https" && !(allowLocalHttp && address.protocol == "http" && isLocalHost(address.host))) {
             throw IOException("Only HTTPS, or HTTP to this network, is allowed: $url")
@@ -89,6 +90,43 @@ object Http {
         connectTimeoutMs: Int = CONNECT_TIMEOUT_MS,
         allowLocalHttp: Boolean = false,
     ): ByteArray = ByteArrayOutputStream().also { get(url, it, readTimeoutMs, connectTimeoutMs, allowLocalHttp) }.toByteArray()
+
+    /**
+     * POSTs `body` to a device on this network (the user's Starlink dish) and returns the response's
+     * headers (names lower case) and body. Local addresses only; offline mode doesn't stop it, since
+     * nothing leaves the local network.
+     */
+    fun postLocal(
+        url: String,
+        body: ByteArray,
+        headers: Map<String, String>,
+        timeoutMs: Int,
+    ): Pair<Map<String, List<String>>, ByteArray> {
+        val address = URL(url)
+        if (address.protocol !in listOf("http", "https") || !isLocalHost(address.host)) {
+            throw IOException("Only addresses on this network are allowed: $url")
+        }
+        val connection = address.openConnection() as HttpURLConnection
+        connection.connectTimeout = timeoutMs
+        connection.readTimeout = timeoutMs
+        connection.requestMethod = "POST"
+        connection.doOutput = true
+        connection.setFixedLengthStreamingMode(body.size)
+        connection.setRequestProperty("User-Agent", USER_AGENT)
+        headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
+        try {
+            connection.outputStream.use { it.write(body) }
+            val code = connection.responseCode
+            if (code != HttpURLConnection.HTTP_OK) {
+                val text = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                throw StatusException(code, text)
+            }
+            val names = connection.headerFields.filterKeys { it != null }.mapKeys { it.key.lowercase() }
+            return names to connection.inputStream.use { it.readBytes() }
+        } finally {
+            connection.disconnect()
+        }
+    }
 
     /**
      * Whether `host` is on the local network: a private, link-local or loopback IPv4 address, a

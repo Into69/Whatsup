@@ -31,6 +31,8 @@ abstract class Host
     readonly ConjunctionFeed conjunctions;
     readonly LaunchFeed launches = new();
     readonly AircraftFeed aircraftFeed = new();
+    readonly StarlinkDish starlinkDish = new();
+    readonly OneWebTerminal onewebTerminal = new();
     readonly FlightInfo flightInfo = new();
     readonly Skyline skyline = new();
 
@@ -190,6 +192,14 @@ abstract class Host
             int.TryParse(path["satcat/".Length..], out var id) ? catalog.Lookup(id) : null,
         // Live aircraft around the location (aircraft.js polls it).
         "aircraft.json" => AircraftData(),
+        // The user's Starlink dish (starlink.js polls it in sky view).
+        "starlink.json" => MapShown && settings.StarlinkDish
+            ? starlinkDish.Load(settings.StarlinkAddress)
+            : Json.Bytes(new JsonObject { ["error"] = "off" }),
+        // The user's OneWeb terminal (oneweb.js polls it).
+        "oneweb.json" => MapShown && settings.OneWebTerminal
+            ? onewebTerminal.Load(settings.OneWebAddress)
+            : Json.Bytes(new JsonObject { ["error"] = "off" }),
         // A selected aircraft's route, airframe and track (flight/route/BAW83 and so on).
         _ when path.StartsWith("flight/", StringComparison.Ordinal) => FlightData(path["flight/".Length..]),
         // The terrain's skyline round a place (skyline/53.5461,-113.4938), for sky view.
@@ -680,6 +690,19 @@ abstract class Host
                     if (check.Release != null) availableUpdate = check.Release;
                     RunSettingsJs($"settingsPage.updateChecked({check.Answer.ToJsonString()})");
                 });
+                break;
+            // The Starlink card's Check: what the dish says, for settingsPage.starlinkChecked.
+            case "checkStarlink":
+                var dishAnswer = await Task.Run(() => SettingsPage.CheckStarlink(settings));
+                Post(() => RunSettingsJs($"settingsPage.starlinkChecked({dishAnswer.ToJsonString()})"));
+                break;
+            // The OneWeb card's Check: what the terminal says, and its answers as they came, for settingsPage.onewebChecked.
+            case "checkOneWeb":
+                var terminalAnswer = await Task.Run(() => SettingsPage.CheckOneWeb(settings));
+                Post(() => RunSettingsJs($"settingsPage.onewebChecked({terminalAnswer.ToJsonString()})"));
+                break;
+            case "clearOneWebMap":
+                settings.OneWebMapClearedAt = App.Now();
                 break;
             // Its Update: back to the globe, where the progress panel shows the download.
             case "installUpdate":

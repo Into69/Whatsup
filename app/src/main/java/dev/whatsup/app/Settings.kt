@@ -145,6 +145,14 @@ class Settings(context: Context) {
         get() = prefs.getFloat(KEY_COMPASS_OFFSET, 0f)
         set(value) = prefs.edit().putFloat(KEY_COMPASS_OFFSET, value).apply()
 
+    /**
+     * How compassOffset was last set, for the page to say how long ago and where: JSON
+     * { at (ms since 1970), how ('sun', 'moon' or 'hand'), lat, lon }, or "" for never.
+     */
+    var compassCalibration: String
+        get() = prefs.getString(KEY_COMPASS_CALIBRATION, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_COMPASS_CALIBRATION, value).apply()
+
     /** Live aircraft from ADS-B (AircraftFeed), shown as a layer of their own. */
     var aircraftShown: Boolean
         get() = prefs.getBoolean(KEY_AIRCRAFT, false)
@@ -170,10 +178,38 @@ class Settings(context: Context) {
         get() = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0)
         set(value) = prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, value).apply()
 
+    /** Read the user's own Starlink dish (StarlinkDish) for sky view: its pointing and obstruction map. */
+    var starlinkDish: Boolean
+        get() = prefs.getBoolean(KEY_STARLINK_DISH, false)
+        set(value) = prefs.edit().putBoolean(KEY_STARLINK_DISH, value).apply()
+
+    /** The dish's address, or "" for the usual one (StarlinkDish.DEFAULT_ADDRESS). */
+    var starlinkAddress: String
+        get() = prefs.getString(KEY_STARLINK_ADDRESS, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_STARLINK_ADDRESS, value.trim()).apply()
+
+    /** Read the user's own OneWeb terminal (OneWebTerminal) for sky view: the satellite in use and its signal. */
+    var onewebTerminal: Boolean
+        get() = prefs.getBoolean(KEY_ONEWEB_TERMINAL, false)
+        set(value) = prefs.edit().putBoolean(KEY_ONEWEB_TERMINAL, value).apply()
+
+    /** The terminal's address, or "" for the usual one (OneWebTerminal.DEFAULT_ADDRESS). */
+    var onewebAddress: String
+        get() = prefs.getString(KEY_ONEWEB_ADDRESS, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_ONEWEB_ADDRESS, value.trim()).apply()
+
+    /** When the user last cleared the OneWeb signal map (ms since 1970): oneweb.js drops what it saw before. */
+    var onewebMapClearedAt: Long
+        get() = prefs.getLong(KEY_ONEWEB_MAP_CLEARED, 0)
+        set(value) = prefs.edit().putLong(KEY_ONEWEB_MAP_CLEARED, value).apply()
+
     /** The shape globe.setLayers() takes: each layer's key to whether it is shown. */
     fun layersJson(): JSONObject = JSONObject().apply {
         for (layer in DisplayLayer.entries) put(layer.key, isShown(layer))
         put("aircraft", aircraftShown)
+        put("starlinkDish", starlinkDish)
+        put("onewebTerminal", onewebTerminal)
+        put("onewebMapClearedAt", onewebMapClearedAt)
     }
 
     private companion object {
@@ -184,6 +220,12 @@ class Settings(context: Context) {
         const val KEY_FAVOURITE_ALERTS = "favouriteAlerts"
         const val KEY_FAVOURITES = "favourites"
         const val KEY_COMPASS_OFFSET = "compassOffset"
+        const val KEY_COMPASS_CALIBRATION = "compassCalibration"
+        const val KEY_STARLINK_DISH = "starlinkDish"
+        const val KEY_STARLINK_ADDRESS = "starlinkAddress"
+        const val KEY_ONEWEB_TERMINAL = "onewebTerminal"
+        const val KEY_ONEWEB_ADDRESS = "onewebAddress"
+        const val KEY_ONEWEB_MAP_CLEARED = "onewebMapClearedAt"
         const val KEY_BUTTONS_HIDDEN = "buttonsHidden"
         const val KEY_NIGHT_VISION = "nightVision"
         const val KEY_OFFLINE_MODE = "offlineMode"

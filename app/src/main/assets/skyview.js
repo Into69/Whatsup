@@ -35,6 +35,8 @@ const orientation = {
     /** Magnetic declination here (east positive), and the user's calibration, both added to headings. */
     declination: 0,
     offset: 0,
+    /** How `offset` was last set: { at (ms), how ('sun', 'moon', 'hand'), lat, lon }, or null. */
+    calibration: null,
     /** Whether the declination is from a real location. */
     located: false,
     /** Who wants readings ('sky', 'dish'); MainActivity reads the sensor while anyone does. */
@@ -70,11 +72,15 @@ function setOrientation(matrix, headingError = -1) {
     for (const listener of orientationListeners) listener(matrix);
 }
 
-/** From MainActivity: the declination at the user's location and the saved calibration. */
-function setCompass(declination, offset, located) {
+/**
+ * From MainActivity: the declination at the user's location and the saved calibration, with how it
+ * was set ({ at, how, lat, lon }, or null; see setCompassOffset).
+ */
+function setCompass(declination, offset, located, calibration = null) {
     orientation.declination = declination;
     orientation.offset = offset;
     orientation.located = located;
+    orientation.calibration = calibration;
     correctOrientation();
 }
 
@@ -411,7 +417,7 @@ const HIDDEN_OPACITY = 0.3;
 const OUT_OF_REACH_OPACITY = 0.45;
 /** Which labels win where they would overlap (placeSkyLabels): the highest first. */
 const LABEL_PRIORITY = {
-    tracked: 100, body: 90, compass: 80, starred: 70, planet: 60, satellite: 50, aircraft: 45,
+    tracked: 100, body: 90, dish: 85, compass: 80, starred: 70, planet: 60, satellite: 50, aircraft: 45,
     terminal: 35, geo: 30, star: 20, constellation: 10, degrees: 5,
 };
 
@@ -478,6 +484,8 @@ function drawSky() {
     const [lon, lat] = here;
     drawGeoArc(ctx, project, lat, lon, labels);
     drawTerminalCones(ctx, project, width, height, labels);
+    drawStarlink(ctx, project, focal, width, height, labels);
+    drawOneWeb(ctx, project, focal, width, height, labels);
 
     const sunPoint = project(skyDirection(sun.map(c => c * 1e6), lat, lon));
     if (sunPoint) {

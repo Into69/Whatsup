@@ -84,6 +84,11 @@ sealed class Settings
     const string KeySkyLook = "skyLook";
     const string KeyCheckUpdates = "checkUpdates";
     const string KeyLastUpdateCheck = "lastUpdateCheck";
+    const string KeyStarlinkDish = "starlinkDish";
+    const string KeyStarlinkAddress = "starlinkAddress";
+    const string KeyOneWebTerminal = "onewebTerminal";
+    const string KeyOneWebAddress = "onewebAddress";
+    const string KeyOneWebMapCleared = "onewebMapClearedAt";
 
     readonly string file = Path.Combine(App.DataDir, "settings.json");
     readonly object gate = new();
@@ -285,12 +290,50 @@ sealed class Settings
         set => Put(KeyLastUpdateCheck, value);
     }
 
+    /** Read the user's own Starlink dish (StarlinkDish) for sky view: its pointing and obstruction map. */
+    public bool StarlinkDish
+    {
+        get => GetBool(KeyStarlinkDish, false);
+        set => Put(KeyStarlinkDish, value);
+    }
+
+    /** The dish's address, or "" for the usual one (StarlinkDish.DefaultAddress). */
+    public string StarlinkAddress
+    {
+        get => GetString(KeyStarlinkAddress) ?? "";
+        set => Put(KeyStarlinkAddress, value.Trim());
+    }
+
+    /** Read the user's own OneWeb terminal (OneWebTerminal) for sky view: the satellite in use and its signal. */
+    public bool OneWebTerminal
+    {
+        get => GetBool(KeyOneWebTerminal, false);
+        set => Put(KeyOneWebTerminal, value);
+    }
+
+    /** The terminal's address, or "" for the usual one (OneWebTerminal.DefaultAddress). */
+    public string OneWebAddress
+    {
+        get => GetString(KeyOneWebAddress) ?? "";
+        set => Put(KeyOneWebAddress, value.Trim());
+    }
+
+    /** When the user last cleared the OneWeb signal map (ms since 1970): oneweb.js drops what it saw before. */
+    public long OneWebMapClearedAt
+    {
+        get => GetLong(KeyOneWebMapCleared, 0);
+        set => Put(KeyOneWebMapCleared, value);
+    }
+
     /** The shape globe.setLayers() takes: each layer's key to whether it is shown. */
     public JsonObject LayersJson()
     {
         var json = new JsonObject();
         foreach (var layer in DisplayLayer.Entries) json[layer.Key] = IsShown(layer);
         json["aircraft"] = AircraftShown;
+        json["starlinkDish"] = StarlinkDish;
+        json["onewebTerminal"] = OneWebTerminal;
+        json["onewebMapClearedAt"] = OneWebMapClearedAt;
         return json;
     }
 }
