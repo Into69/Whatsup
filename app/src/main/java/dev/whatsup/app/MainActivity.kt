@@ -226,6 +226,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         webView.settings.javaScriptEnabled = true
         // Sky view's camera background starts playing without a tap.
         webView.settings.mediaPlaybackRequiresUserGesture = false
+        // The page's own small choices, like the dish aligner's tone (localStorage).
+        webView.settings.domStorageEnabled = true
         // The page is the app's own (served from its assets), so it may call back into the app.
         webView.addJavascriptInterface(Bridge(), "Android")
         webView.setBackgroundColor(getColor(R.color.space))

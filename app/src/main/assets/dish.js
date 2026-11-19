@@ -18,6 +18,14 @@ const DISH_SCOPE_DEGREES = 20;
 const DISH_ON_TARGET = 1;
 const DISH_CLOSE = 5;
 const DISH_REFRESH_MS = 100;
+/**
+ * The pointing tone: a beep every DISH_TONE_SLOWEST_MS when DISH_SCOPE_DEGREES or more off, coming
+ * faster as the error shrinks (DISH_TONE_FASTEST_MS when nearly there), higher as well, and a steady
+ * tone within DISH_ON_TARGET.
+ */
+const DISH_TONE_SLOWEST_MS = 1000, DISH_TONE_FASTEST_MS = 70, DISH_TONE_BEEP_S = 0.05;
+const DISH_TONE_LOW_HZ = 400, DISH_TONE_HIGH_HZ = 1200, DISH_TONE_VOLUME = 0.25;
+const DISH_TONE_KEY = 'dish.tone';
 
 const dish = {
     open: false,
@@ -34,13 +42,96 @@ const dish = {
     /** A calibration in progress: 'sun' or 'moon', waiting for the user to aim and tap Set. */
     calibrating: null,
     refreshedAt: 0,
+    /** How far off (degrees) the phone points, for the tone; null when there is nothing to aim at. */
+    off: null,
 };
+
+/** The pointing tone, while it is on and the dish aligner is open (Web Audio, one oscillator gated on and off). */
+const dishTone = {
+    on: readDishTone(),
+    context: null,
+    oscillator: null,
+    gain: null,
+    timer: 0,
+};
+
+function readDishTone() {
+    try {
+        return localStorage.getItem(DISH_TONE_KEY) === 'on';
+    } catch {
+        return false;
+    }
+}
+
+function setDishTone(on) {
+    dishTone.on = on;
+    try {
+        localStorage.setItem(DISH_TONE_KEY, on ? 'on' : 'off');
+    } catch {
+        // Not kept, then: it is still on for now.
+    }
+    if (on && dish.open) startDishTone(); else stopDishTone();
+}
+
+function startDishTone() {
+    if (dishTone.context) return;
+    const Context = window.AudioContext || window.webkitAudioContext;
+    if (!Context) return;
+    const context = new Context();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = 'sine';
+    gain.gain.value = 0;
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start();
+    context.resume?.();
+    Object.assign(dishTone, { context, oscillator, gain });
+    dishToneTick();
+}
+
+function stopDishTone() {
+    clearTimeout(dishTone.timer);
+    dishTone.context?.close();
+    Object.assign(dishTone, { context: null, oscillator: null, gain: null, timer: 0 });
+}
+
+// In the background (MainActivity pauses the page), silent at once: the timer may not run to hush it.
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) dishTone.context?.suspend();
+    else dishTone.context?.resume();
+});
+
+/** One beat of the tone, by how far off the phone points now; schedules the next. */
+function dishToneTick() {
+    const { context, oscillator, gain } = dishTone;
+    if (!context) return;
+    const now = context.currentTime;
+    const off = document.hidden || lineUp.node ? null : dish.off;
+    let wait = DISH_TONE_SLOWEST_MS / 4;
+    if (off === null) {
+        gain.gain.setTargetAtTime(0, now, 0.01);
+    } else {
+        const share = Math.min(off, DISH_SCOPE_DEGREES) / DISH_SCOPE_DEGREES;
+        // Higher as it closes in, on the scope's square-root scale, so the last degrees are heard.
+        oscillator.frequency.setTargetAtTime(DISH_TONE_LOW_HZ + (DISH_TONE_HIGH_HZ - DISH_TONE_LOW_HZ) * (1 - Math.sqrt(share)), now, 0.02);
+        if (off < DISH_ON_TARGET) {
+            gain.gain.setTargetAtTime(DISH_TONE_VOLUME, now, 0.01);
+            wait = DISH_TONE_FASTEST_MS;
+        } else {
+            gain.gain.setTargetAtTime(DISH_TONE_VOLUME, now, 0.005);
+            gain.gain.setTargetAtTime(0, now + DISH_TONE_BEEP_S, 0.01);
+            wait = DISH_TONE_FASTEST_MS + (DISH_TONE_SLOWEST_MS - DISH_TONE_FASTEST_MS) * share;
+        }
+    }
+    dishTone.timer = setTimeout(dishToneTick, wait);
+}
 
 function openDish(sat) {
     if (dish.open) closeDish();
     dish.open = true;
     dish.sat = sat;
     dish.calibrating = null;
+    dish.off = null;
     dish.node = buildDish(sat);
     document.body.appendChild(dish.node);
     wantOrientation('dish', true);
@@ -48,12 +139,14 @@ function openDish(sat) {
     window.Android?.setMapButtonsHidden(true);
     compassStatusChanged();
     overlaysChanged();
+    if (dishTone.on) startDishTone();
     requestAnimationFrame(drawDish);
 }
 
 function closeDish() {
     if (!dish.open) return;
     dish.open = false;
+    stopDishTone();
     dish.node.remove();
     dish.node = null;
     wantOrientation('dish', false);
@@ -123,6 +216,19 @@ function buildDish(sat) {
     figure8.addEventListener('click', openCalibration);
     figure8.dataset.opens = 'calibration';
     calibrate.append(sunButton, moonButton, figure8);
+    const toneRow = el('div', 'sheet-buttons');
+    const toneButton = el('button', 'dish-tone');
+    const showTone = () => {
+        toneButton.classList.toggle('on', dishTone.on);
+        toneButton.textContent = dishTone.on ? '🔊 Tone on' : '🔈 Tone off';
+    };
+    toneButton.addEventListener('click', () => {
+        setDishTone(!dishTone.on);
+        showTone();
+    });
+    showTone();
+    toneRow.append(toneButton);
+
     const nudge = el('div', 'sheet-buttons');
     for (const [label, change] of [['−1°', -1], ['−0.1°', -0.1], ['+0.1°', 0.1], ['+1°', 1]]) {
         const button = el('button', '', label);
@@ -141,6 +247,8 @@ function buildDish(sat) {
         offset,
         dish.canvas,
         el('div', 'dish-steps'),
+        toneRow,
+        el('div', 'sheet-line sheet-hint', `With the tone on, it beeps faster and higher as you close in, and holds a steady tone on target (within ${DISH_ON_TARGET}°). Turn the media volume up.`),
         el('div', 'sheet-line dish-phone'),
         el('div', 'dish-section', 'Compass'),
         el('div', 'sheet-line dish-compass'),
@@ -231,6 +339,7 @@ function drawDish() {
     const now = Date.now();
     if (now - dish.refreshedAt < DISH_REFRESH_MS) return;
     dish.refreshedAt = now;
+    dish.off = null;
     const node = dish.node;
     const text = (selector, value) => { node.querySelector(selector).textContent = value; };
 
@@ -296,7 +405,10 @@ function drawDish() {
     } else {
         dish.canvas.onclick = null;
     }
-    drawScope(dAz * Math.cos(target.el * Math.PI / 180), dEl);
+    const across = dAz * Math.cos(target.el * Math.PI / 180);
+    // The tone guides heading and elevation; a satellite below the horizon has nothing to aim at.
+    if (target.el >= 0) dish.off = Math.hypot(across, dEl);
+    drawScope(across, dEl);
 }
 
 /** One readout: which way and how far, coloured by how close. */
