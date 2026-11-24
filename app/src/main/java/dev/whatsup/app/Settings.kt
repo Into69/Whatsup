@@ -16,6 +16,9 @@ enum class DisplayLayer(val key: String, @StringRes val title: Int, val shownByD
     LAUNCHES("launches", R.string.layer_launches),
     MY_LOCATION("myLocation", R.string.layer_my_location),
     DAY_NIGHT("dayNight", R.string.layer_day_night),
+    SUN("sun", R.string.layer_sun),
+    MOON("moon", R.string.layer_moon),
+    PLANETS("planets", R.string.layer_planets),
     STARS("stars", R.string.layer_stars),
     CONSTELLATIONS("constellations", R.string.layer_constellations, shownByDefault = false),
     SKYLINE("skyline", R.string.layer_skyline),
@@ -73,7 +76,14 @@ class Settings(context: Context) {
     val shownGroups: List<SatelliteGroup>
         get() = SatelliteGroup.entries.filter(::isShown)
 
-    fun isShown(layer: DisplayLayer): Boolean = prefs.getBoolean(KEY_LAYER_PREFIX + layer.key, layer.shownByDefault)
+    fun isShown(layer: DisplayLayer): Boolean = prefs.getBoolean(KEY_LAYER_PREFIX + layer.key, defaultShown(layer))
+
+    /**
+     * The Sun, Moon and planets were one switch with the stars until 0.8; until set on their own,
+     * they follow how that was left.
+     */
+    private fun defaultShown(layer: DisplayLayer): Boolean =
+        if (layer in SPLIT_FROM_STARS) isShown(DisplayLayer.STARS) else layer.shownByDefault
 
     fun setShown(layer: DisplayLayer, shown: Boolean) =
         prefs.edit().putBoolean(KEY_LAYER_PREFIX + layer.key, shown).apply()
@@ -242,6 +252,7 @@ class Settings(context: Context) {
     }
 
     private companion object {
+        val SPLIT_FROM_STARS = setOf(DisplayLayer.SUN, DisplayLayer.MOON, DisplayLayer.PLANETS)
         const val KEY_TILE_SET = "tileSet"
         const val KEY_GROUP_PREFIX = "showGroup."
         const val KEY_LAYER_PREFIX = "showLayer."

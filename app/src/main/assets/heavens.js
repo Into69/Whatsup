@@ -1,8 +1,8 @@
 'use strict';
 
-// The sky beyond the satellites (layers.stars): the stars of stars.js behind the globe, turning with
-// the sidereal clock; the Sun, a glowing disc in its true direction; and the Moon at its true
-// distance and size, lit from the Sun's side, with its dark maria. Each has a label, and out of view
+// The sky beyond the satellites: the stars of stars.js behind the globe (layers.stars), turning with
+// the sidereal clock; the Sun (layers.sun), a glowing disc in its true direction; and the Moon
+// (layers.moon) at its true distance and size, lit from the Sun's side, with its dark maria. Each has a label, and out of view
 // an arrow at the screen's edge. Tapping the Sun or Moon (here or in sky view) selects it, and
 // panels.js shows its sheet: where it is, rise and set, phases. Sky view draws them too.
 
@@ -371,7 +371,7 @@ const bodyLayer = {
         const data = args.defaultProjectionData;
         bodyOnScreen.sun = bodyOnScreen.moon = null;
         bodyOffScreen.sun = bodyOffScreen.moon = null;
-        if (!layers.stars || args.shaderData.variantName !== 'globe' || data.projectionTransition <= 0.999) {
+        if (!(layers.sun || layers.moon) || args.shaderData.variantName !== 'globe' || data.projectionTransition <= 0.999) {
             placeBodyLabels();
             return;
         }
@@ -434,7 +434,7 @@ const bodyLayer = {
         const sunPos = camera.map((c, i) => c + sun[i] * STAR_DISTANCE);
         const sunEdge = sunPos.map((c, i) => c + across(sun)[i] * STAR_DISTANCE * Math.tan(SUN_ANGULAR_RADIUS));
         const smallest = minimum => layers.trueScale ? TRUE_SCALE_MIN_RADIUS_PX : minimum;
-        bodyOnScreen.sun = draw(0, sunPos, Math.max(smallest(SUN_MIN_RADIUS_PX), distance(screen(sunPos), screen(sunEdge))), SUN_DISC_FRACTION);
+        if (layers.sun) bodyOnScreen.sun = draw(0, sunPos, Math.max(smallest(SUN_MIN_RADIUS_PX), distance(screen(sunPos), screen(sunEdge))), SUN_DISC_FRACTION);
 
         // The Moon, where it really is: lit from the Sun's side, turned so its north is towards Earth's.
         const m = moon.globe;
@@ -447,7 +447,7 @@ const bodyLayer = {
         gl.uniform3fv(this.u.light, [Math.sin(phaseAngle) * Math.cos(sunAngle), Math.sin(phaseAngle) * Math.sin(sunAngle), Math.cos(phaseAngle)]);
         const northAcross = normalize([0, 1, 0].map((c, i) => c - view[i] * view[1]));
         gl.uniform1f(this.u.north, Math.PI / 2 - screenAngle(m, northAcross, MOON_RADIUS));
-        bodyOnScreen.moon = draw(1, m, moonRadius, 1);
+        if (layers.moon) bodyOnScreen.moon = draw(1, m, moonRadius, 1);
         if (this.vao) gl.bindVertexArray(null);
         placeBodyLabels();
     },

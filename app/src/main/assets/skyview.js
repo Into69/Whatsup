@@ -390,18 +390,21 @@ function updateVisible() {
             if (lines.some(line => line.some(dir => dir[2] > 0))) sky.constellations.push({ name, dir: skyAt(ra, dec), lines });
         }
     }
-    if (!layers.stars) return;
-    for (const [ra, dec, mag, bv, name] of STARS) {
-        // Brightest first, so the rest are fainter still.
-        if (mag > SKY_STAR_MAGNITUDE) break;
-        const dir = skyAt(ra, dec);
-        if (dir[2] < -0.05) continue;
-        const [r, g, b] = starColor(bv).map(c => Math.round(c * 255));
-        sky.stars.push({ dir, size: starSize(mag) / 2 + 0.3, color: `rgba(${r}, ${g}, ${b}, ${starAlpha(mag)})`, name });
+    if (layers.stars) {
+        for (const [ra, dec, mag, bv, name] of STARS) {
+            // Brightest first, so the rest are fainter still.
+            if (mag > SKY_STAR_MAGNITUDE) break;
+            const dir = skyAt(ra, dec);
+            if (dir[2] < -0.05) continue;
+            const [r, g, b] = starColor(bv).map(c => Math.round(c * 255));
+            sky.stars.push({ dir, size: starSize(mag) / 2 + 0.3, color: `rgba(${r}, ${g}, ${b}, ${starAlpha(mag)})`, name });
+        }
     }
-    for (const planet of planetsAt(date)) {
-        const dir = skyAt(planet.ra, planet.dec);
-        if (dir[2] > 0) sky.planets.push({ ...planet, dir });
+    if (layers.planets) {
+        for (const planet of planetsAt(date)) {
+            const dir = skyAt(planet.ra, planet.dec);
+            if (dir[2] > 0) sky.planets.push({ ...planet, dir });
+        }
     }
 }
 
@@ -487,7 +490,7 @@ function drawSky() {
     drawStarlink(ctx, project, focal, width, height, labels);
     drawOneWeb(ctx, project, focal, width, height, labels);
 
-    const sunPoint = project(skyDirection(sun.map(c => c * 1e6), lat, lon));
+    const sunPoint = layers.sun ? project(skyDirection(sun.map(c => c * 1e6), lat, lon)) : null;
     if (sunPoint) {
         const radius = bodyRadius(focal, SUN_RADIUS_DEGREES * Math.PI / 180, SKY_SUN_RADIUS_PX);
         ctx.fillStyle = '#ffd166';
@@ -498,10 +501,8 @@ function drawSky() {
         labels.push({ text: 'Sun', x: sunPoint[0], y: sunPoint[1] - Math.max(radius, SMALL_BODY_RING_PX) - 6, priority: LABEL_PRIORITY.body });
         sky.drawn.push({ body: BODIES.sun, x: sunPoint[0], y: sunPoint[1] });
     }
-    if (layers.stars) {
-        drawPlanets(ctx, project, onScreen, labels);
-        drawMoon(ctx, project, lat, lon, focal, labels);
-    }
+    drawPlanets(ctx, project, onScreen, labels);
+    if (layers.moon) drawMoon(ctx, project, lat, lon, focal, labels);
     // Over the Sun, Moon and planets, which can set behind it; under what flies.
     drawSkyline(ctx, project, camera);
 

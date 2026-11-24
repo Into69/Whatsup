@@ -18,6 +18,9 @@ sealed record DisplayLayer(string Key, string Title, bool ShownByDefault = true)
         new("launches", "layer_launches"),
         new("myLocation", "layer_my_location"),
         new("dayNight", "layer_day_night"),
+        new("sun", "layer_sun"),
+        new("moon", "layer_moon"),
+        new("planets", "layer_planets"),
         new("stars", "layer_stars"),
         new("constellations", "layer_constellations", ShownByDefault: false),
         new("skyline", "layer_skyline"),
@@ -160,7 +163,11 @@ sealed class Settings
 
     public List<SatelliteGroup> ShownGroups => SatelliteGroup.Entries.Where(IsShown).ToList();
 
-    public bool IsShown(DisplayLayer layer) => GetBool(KeyLayerPrefix + layer.Key, layer.ShownByDefault);
+    public bool IsShown(DisplayLayer layer) => GetBool(KeyLayerPrefix + layer.Key, DefaultShown(layer));
+
+    /** The Sun, Moon and planets were one switch with the stars until 0.8; until set on their own, they follow how that was left. */
+    bool DefaultShown(DisplayLayer layer) =>
+        layer.Key is "sun" or "moon" or "planets" ? GetBool(KeyLayerPrefix + "stars", true) : layer.ShownByDefault;
 
     public void SetShown(DisplayLayer layer, bool shown) => Put(KeyLayerPrefix + layer.Key, shown);
 
