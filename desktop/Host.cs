@@ -260,6 +260,10 @@ abstract class Host
             case "setFavourites":
                 settings.Favourites = (JsonNode.Parse(Text(0)) as JsonArray ?? []).Select(n => n?.GetValue<int>() ?? 0).Where(n => n > 0).ToHashSet();
                 break;
+            // Starred satellites' own names, as a JSON object { id: name }, for the settings' favourites editor.
+            case "setFavouriteNames":
+                if (JsonNode.Parse(Text(0)) is JsonObject names) settings.NoteFavouriteNames(names);
+                break;
             // Fetches the close approaches (a large download, so only when asked) and tells the page
             // through globe.conjunctionsLoaded() whether /data/conjunctions.json now has them.
             case "loadConjunctions":
@@ -354,6 +358,8 @@ abstract class Host
         PushTileSet();
         PushLayers();
         PushNight();
+        // Names, notes or stars changed in the settings' favourites editor.
+        PushFavourites();
         LoadSatellites();
         PassAlerts.Reschedule(settings);
         CheckForUpdate();
@@ -509,7 +515,7 @@ abstract class Host
 
     void PushFavourites()
     {
-        if (pageReady) RunJs($"globe.setFavourites({new JsonArray(settings.Favourites.Select(f => (JsonNode)f).ToArray()).ToJsonString()})");
+        if (pageReady) RunJs($"globe.setFavourites({new JsonArray(settings.Favourites.Select(f => (JsonNode)f).ToArray()).ToJsonString()}, {settings.FavouriteInfo.ToJsonString()})");
     }
 
     /** Red night mode on or off as set, on both pages. */

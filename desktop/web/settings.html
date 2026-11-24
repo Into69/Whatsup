@@ -89,6 +89,22 @@
             padding: 8px 16px; border-radius: 8px; border: 0; background: var(--accent); color: #05070d;
             font-weight: 600; cursor: pointer;
         }
+        .favourites-hint { padding: 12px 16px; }
+        .favourite-row { width: 100%; border: 0; background: none; text-align: left; cursor: pointer; }
+        .favourite.open .favourite-row { background: rgba(255, 255, 255, .04); }
+        .favourite-form { padding: 0 16px 14px; }
+        .favourite-form .form-label { display: block; padding: 10px 0 4px; color: var(--secondary); font-size: 13px; }
+        .favourite-form input, .favourite-form textarea {
+            box-sizing: border-box; width: 100%; padding: 8px 10px; border-radius: 8px; resize: vertical;
+            background: #0f1218; border: 1px solid var(--stroke); outline: none; font: inherit; color: inherit;
+        }
+        .favourite-form input:focus, .favourite-form textarea:focus { border-color: var(--accent); }
+        .favourite-buttons { display: flex; gap: 8px; margin-top: 12px; }
+        .favourite-buttons .spacer { flex: 1; }
+        .favourite-buttons button {
+            padding: 8px 16px; border-radius: 8px; border: 1px solid var(--stroke); background: none; cursor: pointer;
+        }
+        .favourite-buttons button.primary { border: 0; background: var(--accent); color: #05070d; font-weight: 600; }
         .note { padding: 4px 16px 14px; color: var(--secondary); font-size: 13px; white-space: pre-line; user-select: text; }
         .label { padding: 12px 16px 0; font-size: 15px; }
         input[type=range] { display: block; width: calc(100% - 32px); margin: 10px 16px; accent-color: var(--accent); }

@@ -349,6 +349,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         // was picked up in onStart).
         pushTileSet()
         pushLayers()
+        // Names, notes or stars changed in SettingsActivity's editor.
+        pushFavourites()
         loadSatellites()
         // Pass alerts may have been turned on or off in SettingsActivity.
         PassAlerts.reschedule(this)
@@ -530,7 +532,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     }
 
     private fun pushFavourites() {
-        if (pageReady) runJs("globe.setFavourites(${JSONArray(settings.favourites.toList())})")
+        if (pageReady) runJs("globe.setFavourites(${JSONArray(settings.favourites.toList())}, ${settings.favouriteInfo})")
     }
 
     /** The back camera's field of view in degrees across its sensor's long and short sides, if known. */
@@ -783,6 +785,13 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         fun setFavourites(json: String) = runOnUiThread {
             val array = JSONArray(json)
             settings.favourites = (0 until array.length()).map(array::getInt).toSet()
+        }
+
+        /** Starred satellites' own names, as a JSON object { id: name }, for SettingsActivity's editor to list them by. */
+        @JavascriptInterface
+        fun setFavouriteNames(json: String) = runOnUiThread {
+            runCatching { settings.noteFavouriteNames(JSONObject(json)) }
+                .onFailure { Log.w(TAG, "Bad favourite names", it) }
         }
 
         /** How the calibration below was set, as Settings.compassCalibration; "{}" or anything else not an object forgets it. */

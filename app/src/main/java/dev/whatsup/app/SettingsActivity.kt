@@ -27,7 +27,8 @@ import org.json.JSONObject
 /**
  * The settings screen, as sections of cards: location (the phone's, or one set by hand), map style
  * (a grid of previews), satellites (a card per
- * SatelliteCategory, folding open to its groups), display layers, alerts, and about. Built in code
+ * SatelliteCategory, folding open to its groups), the starred satellites' names and notes, display
+ * layers, alerts, and about. Built in code
  * from small row layouts, since the groups, layers and tile sets are all lists defined elsewhere.
  */
 class SettingsActivity : ComponentActivity() {
@@ -36,6 +37,7 @@ class SettingsActivity : ComponentActivity() {
     /** Categories folded open; kept across rotation. */
     private val expanded = mutableSetOf<SatelliteCategory>()
     private var alertSwitches: List<Switch> = emptyList()
+    private var favouritesCard: LinearLayout? = null
 
     /** Turning an alert on asks to notify; if refused, the alerts go back off. */
     private val requestNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -63,6 +65,7 @@ class SettingsActivity : ComponentActivity() {
         addOffline()
         addMapStyles()
         addSatellites()
+        addFavourites()
         addDisplay()
         addAircraft()
         addStarlink()
@@ -288,6 +291,118 @@ class SettingsActivity : ComponentActivity() {
             total -> getString(R.string.category_summary_all)
             else -> getString(R.string.category_summary, on, total)
         }
+    }
+
+    /**
+     * The favourites editor: a row per starred satellite, by the user's name for it or its own (as the
+     * map last reported it); tapping one edits its name and notes, or unstars it. The map picks the
+     * changes up on coming back to it.
+     */
+    private fun addFavourites() {
+        addSectionHeader(R.drawable.ic_star, R.string.section_favourites)
+        favouritesCard = addCard()
+        fillFavourites()
+    }
+
+    private fun fillFavourites() {
+        val card = favouritesCard ?: return
+        card.removeAllViews()
+        val info = settings.favouriteInfo
+        val starred = settings.favourites
+            .map { id -> id to (info.optJSONObject(id.toString()) ?: JSONObject()) }
+            .sortedBy { (id, entry) -> favouriteTitle(id, entry).lowercase() }
+        val hint = TextView(this)
+        hint.text = getString(if (starred.isEmpty()) R.string.favourites_none else R.string.favourites_hint)
+        hint.setTextColor(getColor(R.color.text_secondary))
+        hint.textSize = 13f
+        hint.setLineSpacing(0f, 1.2f)
+        hint.setPadding(dp(16), dp(12), dp(16), dp(12))
+        card.addView(hint)
+        for ((id, entry) in starred) {
+            addDivider(card)
+            val row = inflate(R.layout.item_setting_row, card)
+            row.findViewById<View>(R.id.row_switch).visibility = View.GONE
+            row.findViewById<TextView>(R.id.row_title).text = "★ " + favouriteTitle(id, entry)
+            val name = entry.optString("name")
+            val known = entry.optString("known")
+            val notes = entry.optString("notes")
+            row.findViewById<TextView>(R.id.row_subtitle).apply {
+                text = listOfNotNull(
+                    known.takeIf { name.isNotEmpty() && it.isNotEmpty() && it != name },
+                    getString(R.string.favourite_number, id),
+                    notes.lineSequence().firstOrNull()?.takeIf { it.isNotBlank() },
+                ).joinToString(" · ")
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+            row.setOnClickListener { editFavourite(id) }
+            card.addView(row)
+        }
+    }
+
+    /** The user's name for a starred satellite, else its own, else its number. */
+    private fun favouriteTitle(id: Int, entry: JSONObject): String =
+        entry.optString("name").ifEmpty { entry.optString("known") }.ifEmpty { getString(R.string.favourite_unnamed, id) }
+
+    /** A dialog to edit a starred satellite's name and notes, or unstar it. */
+    private fun editFavourite(id: Int) {
+        val entry = settings.favouriteInfo.optJSONObject(id.toString()) ?: JSONObject()
+        val known = entry.optString("known")
+        val form = LinearLayout(this)
+        form.orientation = LinearLayout.VERTICAL
+        form.setPadding(dp(20), dp(8), dp(20), 0)
+        fun label(@StringRes text: Int) = TextView(this).also {
+            it.text = getString(text)
+            it.setTextColor(getColor(R.color.text_secondary))
+            it.textSize = 13f
+            it.setPadding(dp(4), dp(10), dp(4), 0)
+            form.addView(it)
+        }
+        fun field(text: String, hint: String, multiLine: Boolean) = android.widget.EditText(this).also {
+            it.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                (if (multiLine) android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE else 0)
+            if (multiLine) {
+                it.minLines = 3
+                it.maxLines = 8
+                it.gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            } else {
+                it.setSingleLine()
+            }
+            it.setText(text)
+            it.hint = hint
+            it.textSize = 15f
+            it.setTextColor(getColor(android.R.color.white))
+            it.setHintTextColor(getColor(R.color.text_secondary))
+            it.backgroundTintList = ColorStateList.valueOf(getColor(R.color.accent))
+            form.addView(it, LinearLayout.LayoutParams(MATCH, WRAP))
+        }
+        label(R.string.favourite_name)
+        val name = field(
+            entry.optString("name"),
+            if (known.isNotEmpty()) getString(R.string.favourite_name_hint, known) else getString(R.string.favourite_name_hint_unknown),
+            multiLine = false,
+        )
+        label(R.string.favourite_notes)
+        val notes = field(entry.optString("notes"), getString(R.string.favourite_notes_hint), multiLine = true)
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle(known.ifEmpty { getString(R.string.favourite_unnamed, id) })
+            .setView(android.widget.ScrollView(this).apply { addView(form) })
+            .setPositiveButton(R.string.favourite_save) { _, _ ->
+                settings.setFavouriteText(id, name.text.toString(), notes.text.toString())
+                fillFavourites()
+            }
+            .setNegativeButton(R.string.favourite_cancel, null)
+            .setNeutralButton(R.string.favourite_unstar) { _, _ ->
+                // The name and notes are kept, for if it is starred again.
+                settings.setFavouriteText(id, name.text.toString(), notes.text.toString())
+                settings.favourites = settings.favourites - id
+                // The map stops alerting its passes when it gets the change, on coming back to it.
+                fillFavourites()
+            }
+            .create()
+        dialog.show()
+        dialog.window?.let { NightVision.apply(it, settings.nightVision) }
     }
 
     private fun addDisplay() {

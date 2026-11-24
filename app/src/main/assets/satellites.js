@@ -105,8 +105,9 @@ const PLANE_DOTS = 120, MAX_PLANES = 400, PLANE_ALPHA = 0.18, PLANE_SIZE = 1.2;
 const PLANE_INCLINATION_STEP = 1, PLANE_NODE_STEP = 2, PLANE_ALTITUDE_STEP_KM = 30;
 
 /**
- * id -> { id, name, officialName, objectId, group, satrec, now: {lat, lon, altKm, speedKmS}, path,
- * pathAt, label, details }. name is the friendly name if names.js has one, else officialName.
+ * id -> { id, name, defaultName, officialName, objectId, group, satrec, now: {lat, lon, altKm, speedKmS},
+ * path, pathAt, label, details }. defaultName is the friendly name if names.js has one, else
+ * officialName; name is the user's own for a starred satellite (userName), else defaultName.
  */
 const satellites = new Map();
 /** Group key -> { color: [r, g, b, a], css: '#rrggbb', size, featured, lowOrbit, label, count }. */
@@ -129,6 +130,11 @@ let selectedAircraft = null;
 let partner = null;
 /** Catalogue numbers of the satellites the user has starred; panels.js keeps it. */
 const favourites = new Set();
+/**
+ * What the user wrote about satellites they starred, from the settings' editor: id -> { name, notes,
+ * known }, where known is the satellite's defaultName as the page last told the app. panels.js keeps it.
+ */
+let favouriteInfo = {};
 let showBelt = false;
 /** Orbital planes (layers.planes) as { color, xyz: Float32Array of globe-space points }. */
 let planes = [];
@@ -159,9 +165,10 @@ function setSatellites(data) {
         const omm = {};
         data.columns.forEach((column, i) => { omm[column] = values[i]; });
         const id = Number(omm.NORAD_CAT_ID);
+        const defaultName = FRIENDLY_NAMES[id] ?? omm.OBJECT_NAME;
         satellites.set(id, {
-            id, group,
-            name: FRIENDLY_NAMES[id] ?? omm.OBJECT_NAME,
+            id, group, defaultName,
+            name: userName(id) ?? defaultName,
             officialName: omm.OBJECT_NAME,
             objectId: omm.OBJECT_ID,
             satrec: satellite.json2satrec(omm),
@@ -184,6 +191,16 @@ function setSatellites(data) {
     for (const sat of dots) sat.now = positionAt(sat.satrec, date);
     tick();
     notifySatelliteListeners();
+}
+
+/** The name the user gave a starred satellite, or null. */
+function userName(id) {
+    return favourites.has(id) && favouriteInfo[id]?.name?.trim() || null;
+}
+
+/** The user's notes on a starred satellite, or ''. */
+function userNotes(id) {
+    return favourites.has(id) && favouriteInfo[id]?.notes?.trim() || '';
 }
 
 function notifySatelliteListeners() {

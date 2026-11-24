@@ -132,7 +132,7 @@ function refreshInView() {
 
 /** Whether the filter `q` (lower case) matches a satellite's name, number or designator. */
 function satelliteMatches(sat, q) {
-    return sat.name.toLowerCase().includes(q) || sat.officialName.toLowerCase().includes(q)
+    return [sat.name, sat.defaultName, sat.officialName].some(name => name.toLowerCase().includes(q))
         || String(sat.id).startsWith(q) || sat.objectId?.toLowerCase().startsWith(q);
 }
 

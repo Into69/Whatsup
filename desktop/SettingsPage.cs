@@ -57,6 +57,7 @@ static class SettingsPage
                 ["maxNm"] = AircraftFeed.MaxRadiusNm,
                 ["receiver"] = settings.AircraftReceiver,
             },
+            ["favourites"] = Favourites(settings),
             ["passAlerts"] = settings.PassAlerts,
             ["favouriteAlerts"] = settings.FavouriteAlerts,
             ["checkUpdates"] = settings.CheckUpdates,
@@ -71,6 +72,21 @@ static class SettingsPage
                 ["address"] = settings.OneWebAddress,
             },
         };
+    }
+
+    /** The starred satellites for the editor: [{ id, name, notes, known }], by the name shown. */
+    static JsonArray Favourites(Settings settings)
+    {
+        var info = settings.FavouriteInfo;
+        var rows = settings.Favourites.Select(id =>
+        {
+            var entry = info[id.ToString(System.Globalization.CultureInfo.InvariantCulture)];
+            string Field(string key) => entry?[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : "";
+            return new JsonObject { ["id"] = id, ["name"] = Field("name"), ["notes"] = Field("notes"), ["known"] = Field("known") };
+        });
+        static string Shown(JsonObject row) => new[] { (string)row["name"]!, (string)row["known"]! }.FirstOrDefault(s => s.Length > 0) ?? "";
+        return new JsonArray(rows.OrderBy(row => Shown(row).Length == 0).ThenBy(Shown, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(row => (int)row["id"]!).Select(row => (JsonNode)row).ToArray());
     }
 
     /**
@@ -126,6 +142,19 @@ static class SettingsPage
                 break;
             case "onewebAddress":
                 settings.OneWebAddress = Text();
+                break;
+            // The favourites editor: { id, name, notes }, and unstarring one (its name and notes are kept).
+            case "favourite":
+                if (value?["id"] is JsonValue idValue && idValue.TryGetValue<int>(out var id))
+                {
+                    settings.SetFavouriteText(id, (string?)value["name"] ?? "", (string?)value["notes"] ?? "");
+                    if (value["unstar"] is JsonValue u && u.TryGetValue<bool>(out var unstar) && unstar)
+                    {
+                        var favourites = settings.Favourites;
+                        favourites.Remove(id);
+                        settings.Favourites = favourites;
+                    }
+                }
                 break;
             case "passAlerts":
             case "favouriteAlerts":

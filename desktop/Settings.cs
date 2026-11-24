@@ -68,6 +68,7 @@ sealed class Settings
     const string KeyPassAlerts = "passAlerts";
     const string KeyFavouriteAlerts = "favouriteAlerts";
     const string KeyFavourites = "favourites";
+    const string KeyFavouriteInfo = "favouriteInfo";
     const string KeyButtonsHidden = "buttonsHidden";
     const string KeyNightVision = "nightVision";
     const string KeyOfflineMode = "offlineMode";
@@ -182,6 +183,60 @@ sealed class Settings
     {
         get => (GetString(KeyFavourites) ?? "").Split(',').Select(s => int.TryParse(s, out var n) ? n : 0).Where(n => n > 0).ToHashSet();
         set => Put(KeyFavourites, string.Join(",", value));
+    }
+
+    /**
+     * What the user wrote about starred satellites in the editor, keyed by catalogue number:
+     * { "25544": { "name", "notes", "known" } }. name and notes are the user's ("" for none); known is
+     * the satellite's own name as the page last reported it, for the editor to show. Kept when a
+     * satellite is unstarred, so starring it again brings them back; the page uses them only while
+     * starred. Saved as a JSON string, as Android keeps it.
+     */
+    public JsonObject FavouriteInfo
+    {
+        get
+        {
+            try
+            {
+                return JsonNode.Parse(GetString(KeyFavouriteInfo) ?? "{}") as JsonObject ?? [];
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return [];
+            }
+        }
+        set => Put(KeyFavouriteInfo, value.ToJsonString());
+    }
+
+    /** The user's name and notes for satellite id ("" to clear either), kept in FavouriteInfo. */
+    public void SetFavouriteText(int id, string name, string notes)
+    {
+        lock (gate)
+        {
+            var info = FavouriteInfo;
+            var entry = info[id.ToString(CultureInfo.InvariantCulture)] as JsonObject ?? [];
+            entry["name"] = name.Trim();
+            entry["notes"] = notes.Trim();
+            info[id.ToString(CultureInfo.InvariantCulture)] = entry.DeepClone();
+            FavouriteInfo = info;
+        }
+    }
+
+    /** Satellites' own names as the page reports them ({ id: name }), into FavouriteInfo's known. */
+    public void NoteFavouriteNames(JsonObject names)
+    {
+        lock (gate)
+        {
+            var info = FavouriteInfo;
+            foreach (var (id, name) in names)
+            {
+                if (name is not JsonValue v || !v.TryGetValue<string>(out var known)) continue;
+                var entry = info[id] as JsonObject ?? [];
+                entry["known"] = known;
+                info[id] = entry.DeepClone();
+            }
+            FavouriteInfo = info;
+        }
     }
 
     /** A location the user set by hand; used instead of the system's while UseManualLocation. */

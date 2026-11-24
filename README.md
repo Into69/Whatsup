@@ -19,6 +19,7 @@ All three are attached to each [release](https://github.com/Into69/Whatsup/relea
 - Red night mode (the moon button) turns the whole app red, to keep your eyes dark-adapted outside.
 - Dish aligner: a guide for pointing a dish at a satellite, with an optional tone that beeps faster and higher as you close in (steady on target), and compass calibration on the Sun or Moon: over the camera's picture, the drawn Sun or Moon moves sideways onto the real one, found in the picture automatically or slid by hand (only the heading moves). It says when and where the compass was last lined up, and suggests doing it again after a month or somewhere new.
 - Pass predictions and notifications for the ISS and starred satellites.
+- Starred satellites: give them your own name, used everywhere in the app, and notes shown in their info (Settings › Starred satellites).
 - Time travel from a day back to a week ahead; upcoming launches; close approaches between objects in orbit.
 - In view: a list of everything above your horizon now (line of sight), starred first.
 - Live aircraft from ADS-B within a radius you choose (5–250 NM), from adsb.lol, adsb.fi or your own receiver: on the globe, in sky view, in search and the in-view list, with where to look for each. Tap one for its airframe, route, the track it has flown and how long it has to go.

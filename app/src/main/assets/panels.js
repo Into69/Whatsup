@@ -2,7 +2,8 @@
 
 // The page's own panels:
 //   - the info sheet for the selected satellite: names, catalogue details, orbit, live position,
-//     pointing, the next pass and close approach, a star to keep it as a favourite, and Follow,
+//     pointing, the next pass and close approach, a star to keep it as a favourite (with the name
+//     and notes the user gave it in Settings), and Follow,
 //     Passes and Align dish buttons; or for the Sun or Moon: where it is, rise and set, twilight,
 //     phase and the next new and full Moon
 //   - search, opened by MainActivity's search button (globe.openSearch); empty, it lists favourites
@@ -70,8 +71,7 @@ function buildSheet(sat) {
     const node = el('div', 'sheet');
     const header = el('div', 'sheet-header');
     const title = el('div', 'sheet-title');
-    title.append(el('b', '', sat.name),
-        el('div', 'sheet-sub', [sat.name !== sat.officialName ? sat.officialName : null, sat.objectId, `#${sat.id}`].filter(Boolean).join(' · ')));
+    title.append(el('b', 'sheet-name'), el('div', 'sheet-sub'));
     const star = el('button', 'sheet-close sheet-star');
     star.setAttribute('aria-label', 'Star');
     star.addEventListener('click', () => toggleFavourite(sat));
@@ -108,7 +108,7 @@ function buildSheet(sat) {
         const row = nextApproach(sat);
         if (row) showApproach(row);
     });
-    node.append(header, group, details, el('div', 'sheet-line sheet-orbit', describeOrbit(sat.satrec)),
+    node.append(header, el('div', 'sheet-line sheet-notes'), group, details, el('div', 'sheet-line sheet-orbit', describeOrbit(sat.satrec)),
         el('div', 'sheet-line sheet-live'), el('div', 'sheet-line sheet-shadow'), el('div', 'sheet-line sheet-pointing'),
         el('div', 'sheet-line sheet-next'), approach, buttons, el('div', 'sheet-passes'), el('div', 'sheet-outages'));
     document.body.appendChild(node);
@@ -116,9 +116,20 @@ function buildSheet(sat) {
     refreshStar();
 }
 
+/** The star, and the names and notes that go with it (the user's own while starred). */
 function refreshStar() {
     const star = sheet.node?.querySelector('.sheet-star');
     if (!star) return;
+    const sat = sheet.sat;
+    sheet.node.querySelector('.sheet-name').textContent = sat.name;
+    sheet.node.querySelector('.sheet-sub').textContent = [
+        sat.name !== sat.defaultName ? sat.defaultName : null,
+        sat.defaultName !== sat.officialName ? sat.officialName : null,
+        sat.objectId, `#${sat.id}`,
+    ].filter(Boolean).join(' · ');
+    const notes = sheet.node.querySelector('.sheet-notes');
+    notes.textContent = userNotes(sat.id);
+    notes.style.display = notes.textContent ? '' : 'none';
     const on = favourites.has(sheet.sat.id);
     star.textContent = on ? '★' : '☆';
     star.classList.toggle('on', on);
@@ -691,9 +702,9 @@ function searchRows(query) {
     /** How well a satellite matches: names starting with the query, then containing it, then numbers; -1 not at all. */
     const rank = sat => {
         if (!q) return 0;
-        const name = sat.name.toLowerCase(), official = sat.officialName.toLowerCase();
-        return name.startsWith(q) || official.startsWith(q) ? 0
-            : name.includes(q) || official.includes(q) ? 1
+        const names = [sat.name, sat.defaultName, sat.officialName].map(name => name.toLowerCase());
+        return names.some(name => name.startsWith(q)) ? 0
+            : names.some(name => name.includes(q)) ? 1
             : String(sat.id).startsWith(q) || sat.objectId?.toLowerCase().startsWith(q) ? 2
             : -1;
     };
@@ -745,7 +756,8 @@ function searchRow(sat) {
     const swatch = el('span', 'swatch');
     swatch.style.background = groupStyles[sat.group].css;
     row.append(swatch, el('span', '', (favourites.has(sat.id) ? '★ ' : '') + sat.name),
-        el('span', 'search-sub', sat.name !== sat.officialName ? sat.officialName : sat.objectId ?? ''));
+        el('span', 'search-sub', sat.name !== sat.defaultName ? sat.defaultName
+            : sat.name !== sat.officialName ? sat.officialName : sat.objectId ?? ''));
     row.addEventListener('click', () => {
         closeSearch();
         select(sat);
@@ -757,22 +769,50 @@ function searchRow(sat) {
 
 // ---- Favourites ----
 
-/** From MainActivity at start: the starred catalogue numbers. */
-function setFavourites(ids) {
+/**
+ * From MainActivity at start and on coming back from Settings: the starred catalogue numbers, and
+ * what the user wrote about them in Settings' editor (favouriteInfo's shape).
+ */
+function setFavourites(ids, info = {}) {
+    const before = JSON.stringify([[...favourites], favouriteInfo]);
     favourites.clear();
     for (const id of ids) favourites.add(id);
+    favouriteInfo = info;
+    if (JSON.stringify([[...favourites], favouriteInfo]) === before) return;
     favouritesChanged();
+    reportFavouriteNames();
+    // Alerts carry the names.
+    if (satellites.size) refreshPassAlerts();
 }
 
 function toggleFavourite(sat) {
     if (favourites.has(sat.id)) favourites.delete(sat.id); else favourites.add(sat.id);
     window.Android?.setFavourites(JSON.stringify([...favourites]));
     favouritesChanged();
+    reportFavouriteNames();
     // Starred satellites' passes can be alerted.
     refreshPassAlerts();
 }
 
+/**
+ * Tells the app the names of starred satellites it doesn't know yet (or knows by an old name), so
+ * Settings' editor can list them by name.
+ */
+function reportFavouriteNames() {
+    const names = {};
+    for (const id of favourites) {
+        const sat = satellites.get(id);
+        if (sat && favouriteInfo[id]?.known !== sat.defaultName) names[id] = sat.defaultName;
+    }
+    if (!Object.keys(names).length) return;
+    for (const [id, name] of Object.entries(names)) favouriteInfo[id] = { ...favouriteInfo[id], known: name };
+    window.Android?.setFavouriteNames(JSON.stringify(names));
+}
+satelliteListeners.push(reportFavouriteNames);
+
 function favouritesChanged() {
+    // A starred satellite goes by the user's name for it, if they gave one.
+    for (const sat of satellites.values()) sat.name = userName(sat.id) ?? sat.defaultName;
     // Labels are rebuilt with or without their star.
     for (const sat of labelled) {
         sat.label.remove();

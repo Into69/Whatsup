@@ -2,7 +2,8 @@
 
 // The settings page, built as SettingsActivity builds the Android one: location (the system's, or
 // one set by hand), offline mode, map style (a grid of previews), satellites (a card per category,
-// folding open to its groups), display layers, aircraft, alerts, and about. What to show comes from
+// folding open to its groups), the starred satellites' names and notes, display layers, aircraft,
+// alerts, and about. What to show comes from
 // /data/settings.json (Host, SettingsPage.State); each change goes back at once (SettingsPage.Set).
 
 const post = message => (window.chrome?.webview ?? window.webkit.messageHandlers.whatsup).postMessage(message);
@@ -206,6 +207,96 @@ function addCategory(category) {
     });
     showOpen();
     updateSummary();
+}
+
+/**
+ * The favourites editor: a row per starred satellite, by the user's name for it or its own (as the
+ * globe last reported it); clicking one opens its name and notes to edit under it, or unstar it. The
+ * globe picks the changes up on going back to it.
+ */
+function addFavourites(state) {
+    addSection('ic_star', 'section_favourites');
+    const card = addCard();
+    const hint = make('div', 'note favourites-hint');
+    card.append(hint);
+    const showHint = () => {
+        hint.textContent = card.querySelector('.favourite') ? strings.favourites_hint : strings.favourites_none;
+    };
+    const title = f => f.name || f.known || strings.favourite_unnamed.replace('%1$d', f.id);
+    for (const favourite of state.favourites) {
+        const item = make('div', 'favourite');
+        const row = make('button', 'row favourite-row');
+        const text = make('div', 'row-text');
+        const name = make('div', 'row-title');
+        const subtitle = make('div', 'row-subtitle');
+        text.append(name, subtitle);
+        row.append(text);
+        const describe = () => {
+            name.textContent = `★ ${title(favourite)}`;
+            subtitle.textContent = [
+                favourite.name && favourite.known && favourite.known !== favourite.name ? favourite.known : null,
+                `#${favourite.id}`,
+                favourite.notes.split('\n')[0].trim() || null,
+            ].filter(Boolean).join(' · ');
+        };
+        describe();
+
+        const form = make('div', 'favourite-form');
+        form.hidden = true;
+        const nameInput = make('input');
+        nameInput.type = 'text';
+        nameInput.placeholder = favourite.known
+            ? strings.favourite_name_hint.replace('%1$s', favourite.known) : strings.favourite_name_hint_unknown;
+        const notesInput = make('textarea');
+        notesInput.rows = 4;
+        notesInput.placeholder = strings.favourite_notes_hint;
+        const buttons = make('div', 'favourite-buttons');
+        const save = make('button', 'primary', strings.favourite_save);
+        const cancel = make('button', '', strings.favourite_cancel);
+        const unstar = make('button', '', strings.favourite_unstar);
+        buttons.append(unstar, make('span', 'spacer'), cancel, save);
+        form.append(make('label', 'form-label', strings.favourite_name), nameInput,
+            make('label', 'form-label', strings.favourite_notes), notesInput, buttons);
+        const open = on => {
+            form.hidden = !on;
+            item.classList.toggle('open', on);
+            if (!on) return;
+            nameInput.value = favourite.name;
+            notesInput.value = favourite.notes;
+            nameInput.focus();
+        };
+        row.addEventListener('click', () => open(form.hidden));
+        cancel.addEventListener('click', () => open(false));
+        const send = extra => {
+            favourite.name = nameInput.value.trim();
+            favourite.notes = notesInput.value.trim();
+            set('favourite', { id: favourite.id, name: favourite.name, notes: favourite.notes, ...extra });
+        };
+        save.addEventListener('click', () => {
+            send({});
+            describe();
+            open(false);
+        });
+        unstar.addEventListener('click', () => {
+            send({ unstar: true });
+            // Its divider goes with it.
+            item.previousElementSibling?.classList.contains('divider') && item.previousElementSibling.remove();
+            item.remove();
+            showHint();
+        });
+        // Enter in the name saves; Escape closes the form, not the page.
+        nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') save.click(); });
+        form.addEventListener('keydown', e => {
+            if (e.key !== 'Escape') return;
+            e.stopPropagation();
+            open(false);
+            row.focus();
+        });
+        item.append(row, form);
+        addDivider(card);
+        card.append(item);
+    }
+    showHint();
 }
 
 function addDisplay(state) {
@@ -442,6 +533,7 @@ window.addEventListener('mouseup', e => {
     addOffline(state);
     addMapStyles(state);
     addSatellites(state);
+    addFavourites(state);
     addDisplay(state);
     addAircraft(state);
     addStarlink(state);

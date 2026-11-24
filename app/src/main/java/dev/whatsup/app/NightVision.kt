@@ -23,8 +23,11 @@ object NightVision {
         ),
     )
 
-    fun apply(activity: Activity, on: Boolean) {
-        val window = activity.window.decorView
+    fun apply(activity: Activity, on: Boolean) = apply(activity.window, on)
+
+    /** For a window of its own, such as a dialog's. */
+    fun apply(window: android.view.Window, on: Boolean) {
+        val window = window.decorView
         if (on) {
             window.setLayerType(View.LAYER_TYPE_HARDWARE, Paint().apply { colorFilter = RED })
         } else {

@@ -93,6 +93,35 @@ class Settings(context: Context) {
         get() = prefs.getString(KEY_FAVOURITES, "").orEmpty().split(',').mapNotNull { it.toIntOrNull() }.toSet()
         set(value) = prefs.edit().putString(KEY_FAVOURITES, value.joinToString(",")).apply()
 
+    /**
+     * What the user wrote about starred satellites in the editor, as JSON keyed by catalogue number:
+     * { "25544": { "name", "notes", "known" } }. name and notes are the user's ("" for none); known is
+     * the satellite's own name as the page last reported it, for the editor to show. Kept when a
+     * satellite is unstarred, so starring it again brings them back; the page uses them only while starred.
+     */
+    var favouriteInfo: JSONObject
+        get() = runCatching { JSONObject(prefs.getString(KEY_FAVOURITE_INFO, "").orEmpty()) }.getOrElse { JSONObject() }
+        set(value) = prefs.edit().putString(KEY_FAVOURITE_INFO, value.toString()).apply()
+
+    /** The user's name and notes for satellite [id] ("" to clear either), kept in [favouriteInfo]. */
+    fun setFavouriteText(id: Int, name: String, notes: String) {
+        val info = favouriteInfo
+        val entry = info.optJSONObject(id.toString()) ?: JSONObject()
+        entry.put("name", name.trim()).put("notes", notes.trim())
+        info.put(id.toString(), entry)
+        favouriteInfo = info
+    }
+
+    /** Satellites' own names as the page reports them ({ id: name }), into [favouriteInfo]'s known. */
+    fun noteFavouriteNames(names: JSONObject) {
+        val info = favouriteInfo
+        for (id in names.keys()) {
+            val entry = info.optJSONObject(id) ?: JSONObject()
+            info.put(id, entry.put("known", names.getString(id)))
+        }
+        favouriteInfo = info
+    }
+
     /** A location the user set by hand; used instead of the phone's while [useManualLocation]. */
     var manualLocation: Place?
         get() {
@@ -219,6 +248,7 @@ class Settings(context: Context) {
         const val KEY_PASS_ALERTS = "passAlerts"
         const val KEY_FAVOURITE_ALERTS = "favouriteAlerts"
         const val KEY_FAVOURITES = "favourites"
+        const val KEY_FAVOURITE_INFO = "favouriteInfo"
         const val KEY_COMPASS_OFFSET = "compassOffset"
         const val KEY_COMPASS_CALIBRATION = "compassCalibration"
         const val KEY_STARLINK_DISH = "starlinkDish"
